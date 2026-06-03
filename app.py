@@ -49,19 +49,23 @@ with st.sidebar:
     st.markdown("---")
 
     st.subheader("🔑 API Key")
-    # Resolve API key: Streamlit secrets → env var → user input
-    _default_key = (
+    # Resolve key: Streamlit secrets → env var → manual input.
+    # If a secret is configured, never expose it in a visible field.
+    _secret_key = (
         st.secrets.get("ANTHROPIC_API_KEY", "")
         if hasattr(st, "secrets")
         else os.environ.get("ANTHROPIC_API_KEY", "")
     )
-    api_key_input = st.text_input(
-        "Anthropic API Key",
-        type="password",
-        value=_default_key,
-        placeholder="sk-ant-...",
-        help="Pre-filled from Streamlit secrets if configured. Never stored.",
-    )
+    if _secret_key:
+        api_key_input = _secret_key
+        st.success("API key configured", icon="🔒")
+    else:
+        api_key_input = st.text_input(
+            "Anthropic API Key",
+            type="password",
+            placeholder="sk-ant-...",
+            help="Enter your Anthropic API key. Never stored.",
+        )
 
     st.markdown("---")
     st.subheader("⚙️ Run Config")
