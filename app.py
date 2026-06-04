@@ -46,9 +46,10 @@ LEAD_FINDER_DIR = Path(__file__).parent
 # ---------------------------------------------------------------------------
 
 _defaults: dict = {
-    "page":     "landing",
-    "leads":    [],
-    "contacts": pd.DataFrame(),
+    "page":           "landing",
+    "leads":          [],
+    "contacts":       pd.DataFrame(),
+    "contacts_debug": pd.DataFrame(),
 }
 for _k, _v in _defaults.items():
     if _k not in st.session_state:
@@ -290,6 +291,21 @@ def _render_contact_results(contacts_df: pd.DataFrame) -> None:
     if contacts_df.empty:
         st.info("No contacts to display.")
         return
+
+    # Debug expander — shows per-company, per-source counts and any errors
+    debug_df: pd.DataFrame = st.session_state.get("contacts_debug", pd.DataFrame())
+    if not debug_df.empty:
+        with st.expander("🔍 API response log — click to diagnose missing data", expanded=False):
+            st.dataframe(debug_df, use_container_width=True, hide_index=True)
+            errors = debug_df[debug_df["Error"] != ""]
+            if not errors.empty:
+                st.warning(f"{len(errors)} error(s) — see Error column above for details.")
+            zeros = debug_df[(debug_df["Error"] == "") & (debug_df["Returned"] == 0)]
+            if not zeros.empty:
+                st.info(
+                    f"{len(zeros)} company/source pair(s) returned 0 contacts — "
+                    "the domain may not be indexed by that provider."
+                )
 
     total    = (~contacts_df["Contact Name"].str.startswith("[")).sum()
     has_email = (contacts_df["Email"].str.len() > 0).sum()
@@ -583,7 +599,7 @@ def render_new_run_contact() -> None:
             def _progress(i: int, total: int, brand: str) -> None:
                 progress_bar.progress(i / total, text=f"Fetching: **{brand}** ({i+1}/{total})")
 
-            st.session_state.contacts = apollo_client.enrich_leads(
+            contacts_df, debug_df = apollo_client.enrich_leads(
                 leads_df=account_df_source,
                 brand_filter=selected_brands,
                 titles=contact_titles or None,
@@ -593,6 +609,8 @@ def render_new_run_contact() -> None:
                 apollo_key=apollo_key if contact_source in ("Apollo.io", "Both") else None,
                 hunter_key=hunter_key if contact_source in ("Hunter.io", "Both") else None,
             )
+            st.session_state.contacts       = contacts_df
+            st.session_state.contacts_debug = debug_df
             progress_bar.progress(1.0, text="✅ Done")
 
     # ── Results ───────────────────────────────────────────────────────────

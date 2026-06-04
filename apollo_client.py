@@ -81,10 +81,13 @@ def _apollo_post(api_key: str, payload: dict) -> dict:
 
 
 def _parse_apollo(data: dict) -> list[dict]:
+    # New api_search endpoint returns "contacts"; old mixed_people/search returned "people"
+    people = data.get("contacts") or data.get("people") or []
     contacts = []
-    for person in data.get("people", []):
+    for person in people:
         phones = person.get("phone_numbers") or []
         phone  = next((p["sanitized_number"] for p in phones if p.get("sanitized_number")), "")
+        # Apollo may mask emails on lower-tier plans — still include the row
         contacts.append({
             "contact_name":  person.get("name") or "",
             "contact_title": person.get("title") or "",
@@ -177,21 +180,20 @@ def enrich_leads(
     max_per_company: int = 3,
     progress_callback=None,
     use_keyword: bool = False,
-    # per-source keys (None = skip that source)
     apollo_key: str | None = None,
     hunter_key: str | None = None,
 ):
     """
     Enrich leads with contacts from Apollo and/or Hunter.io.
-    Pass apollo_key and/or hunter_key to activate each source.
-    Returns a pd.DataFrame, one row per contact.
+    Returns (contacts_df, debug_log) tuple.
     """
     import pandas as pd
 
     targets = leads_df if brand_filter is None else leads_df[leads_df["Brand"].isin(brand_filter)]
     targets = targets.drop_duplicates(subset=["Brand"])
     total   = len(targets)
-    rows: list[dict] = []
+    rows:      list[dict] = []
+    debug_log: list[dict] = []   # one entry per company per source
 
     for i, (_, row) in enumerate(targets.iterrows()):
         brand = row.get("Brand", "")
@@ -217,33 +219,44 @@ def enrich_leads(
         if apollo_key:
             try:
                 if use_keyword:
-                    contacts += search_contacts_apollo_by_name(apollo_key, brand, titles, max_per_company)
+                    found = search_contacts_apollo_by_name(apollo_key, brand, titles, max_per_company)
                 elif domain:
-                    contacts += search_contacts_apollo(apollo_key, domain, titles, max_per_company)
+                    found = search_contacts_apollo(apollo_key, domain, titles, max_per_company)
                 else:
+                    found = []
                     rows.append({**base, **_empty_contact("[No website — Apollo skipped]")})
-            except requests.HTTPError as exc:
-                rows.append({**base, **_empty_contact(f"[Apollo error: {exc}]")})
+                contacts += found
+                debug_log.append({"Brand": brand, "Source": "Apollo", "Domain": domain or "(keyword)",
+                                   "Returned": len(found), "Error": ""})
             except Exception as exc:
+                debug_log.append({"Brand": brand, "Source": "Apollo", "Domain": domain or "",
+                                   "Returned": 0, "Error": str(exc)[:120]})
                 rows.append({**base, **_empty_contact(f"[Apollo error: {exc}]")})
 
         # --- Hunter ---
-        if hunter_key and domain:
-            try:
-                contacts += search_contacts_hunter(hunter_key, domain, max_per_company)
-            except requests.HTTPError as exc:
-                rows.append({**base, **_empty_contact(f"[Hunter error: {exc}]")})
-            except Exception as exc:
-                rows.append({**base, **_empty_contact(f"[Hunter error: {exc}]")})
+        if hunter_key:
+            if domain:
+                try:
+                    found = search_contacts_hunter(hunter_key, domain, max_per_company)
+                    contacts += found
+                    debug_log.append({"Brand": brand, "Source": "Hunter", "Domain": domain,
+                                       "Returned": len(found), "Error": ""})
+                except Exception as exc:
+                    debug_log.append({"Brand": brand, "Source": "Hunter", "Domain": domain,
+                                       "Returned": 0, "Error": str(exc)[:120]})
+                    rows.append({**base, **_empty_contact(f"[Hunter error: {exc}]")})
+            else:
+                debug_log.append({"Brand": brand, "Source": "Hunter", "Domain": "",
+                                   "Returned": 0, "Error": "No domain — skipped"})
 
-        # Deduplicate by email across sources, keep first occurrence
-        seen_emails: set[str] = set()
+        # Deduplicate by email, keep first occurrence
+        seen: set[str] = set()
         for c in contacts:
-            email = c.get("contact_email", "").lower().strip()
-            if email and email in seen_emails:
+            email = (c.get("contact_email") or "").lower().strip()
+            if email and email in seen:
                 continue
             if email:
-                seen_emails.add(email)
+                seen.add(email)
             rows.append({
                 **base,
                 "Contact Name":  c["contact_name"],
@@ -255,9 +268,11 @@ def enrich_leads(
             })
 
         if not contacts and not any(
-            r.get("Brand") == brand and r.get("Contact Name", "").startswith("[")
+            r.get("Brand") == brand and str(r.get("Contact Name", "")).startswith("[")
             for r in rows
         ):
             rows.append({**base, **_empty_contact("[No contacts found]")})
 
-    return pd.DataFrame(rows) if rows else pd.DataFrame()
+    df      = pd.DataFrame(rows)      if rows      else pd.DataFrame()
+    debug   = pd.DataFrame(debug_log) if debug_log else pd.DataFrame()
+    return df, debug
