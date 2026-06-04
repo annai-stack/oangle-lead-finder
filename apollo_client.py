@@ -39,26 +39,16 @@ def extract_domain(website: str) -> str | None:
         return None
 
 
-def search_contacts(
-    api_key: str,
-    domain: str,
-    titles: list[str] | None = None,
-    max_results: int = 5,
-) -> list[dict]:
-    """Search Apollo for contacts at a given company domain."""
-    payload: dict = {
-        "api_key": api_key,
-        "q_organization_domains": domain,   # comma-sep string, not array
-        "page": 1,
-        "per_page": max_results,
-    }
-    if titles:
-        payload["person_titles"] = titles
-
+def _apollo_post(api_key: str, payload: dict) -> dict:
+    """POST to Apollo people search with key in header (required by Apollo)."""
     resp = requests.post(
         APOLLO_PEOPLE_SEARCH,
         json=payload,
-        headers={"Content-Type": "application/json", "Cache-Control": "no-cache"},
+        headers={
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+            "X-Api-Key": api_key,
+        },
         timeout=20,
     )
     if not resp.ok:
@@ -66,27 +56,36 @@ def search_contacts(
             detail = resp.json()
         except Exception:
             detail = resp.text
-        raise requests.HTTPError(
-            f"{resp.status_code} — {detail}",
-            response=resp,
-        )
-    data = resp.json()
+        raise requests.HTTPError(f"{resp.status_code} — {detail}", response=resp)
+    return resp.json()
 
+
+def _parse_people(data: dict) -> list[dict]:
     contacts = []
     for person in data.get("people", []):
         phones = person.get("phone_numbers") or []
-        phone = next(
-            (p["sanitized_number"] for p in phones if p.get("sanitized_number")),
-            "",
-        )
+        phone  = next((p["sanitized_number"] for p in phones if p.get("sanitized_number")), "")
         contacts.append({
-            "contact_name": person.get("name") or "",
+            "contact_name":  person.get("name") or "",
             "contact_title": person.get("title") or "",
             "contact_email": person.get("email") or "",
             "contact_phone": phone,
-            "linkedin_url": person.get("linkedin_url") or "",
+            "linkedin_url":  person.get("linkedin_url") or "",
         })
     return contacts
+
+
+def search_contacts(
+    api_key: str,
+    domain: str,
+    titles: list[str] | None = None,
+    max_results: int = 5,
+) -> list[dict]:
+    """Search Apollo for contacts at a given company domain."""
+    payload: dict = {"q_organization_domains": domain, "page": 1, "per_page": max_results}
+    if titles:
+        payload["person_titles"] = titles
+    return _parse_people(_apollo_post(api_key, payload))
 
 
 def search_contacts_by_name(
@@ -97,40 +96,13 @@ def search_contacts_by_name(
 ) -> list[dict]:
     """Search Apollo by company keyword — used for manually entered company names."""
     payload: dict = {
-        "api_key": api_key,
         "q_keywords": f"{company_name} Singapore",
         "page": 1,
         "per_page": max_results,
     }
     if titles:
         payload["person_titles"] = titles
-
-    resp = requests.post(
-        APOLLO_PEOPLE_SEARCH,
-        json=payload,
-        headers={"Content-Type": "application/json", "Cache-Control": "no-cache"},
-        timeout=20,
-    )
-    if not resp.ok:
-        try:
-            detail = resp.json()
-        except Exception:
-            detail = resp.text
-        raise requests.HTTPError(f"{resp.status_code} — {detail}", response=resp)
-
-    data = resp.json()
-    contacts = []
-    for person in data.get("people", []):
-        phones = person.get("phone_numbers") or []
-        phone = next((p["sanitized_number"] for p in phones if p.get("sanitized_number")), "")
-        contacts.append({
-            "contact_name":  person.get("name") or "",
-            "contact_title": person.get("title") or "",
-            "contact_email": person.get("email") or "",
-            "contact_phone": phone,
-            "linkedin_url":  person.get("linkedin_url") or "",
-        })
-    return contacts
+    return _parse_people(_apollo_post(api_key, payload))
 
 
 def enrich_leads(
