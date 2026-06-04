@@ -467,8 +467,22 @@ def render_new_run_account() -> None:
                 i / len(selected_segments),
                 text=f"Searching: **{segment}** ({i+1}/{len(selected_segments)})",
             )
-            with st.spinner(f"Searching {segment}…"):
-                all_raw.extend(lf.search_segment(client, segment))
+            try:
+                with st.spinner(f"Searching {segment}…"):
+                    all_raw.extend(lf.search_segment(client, segment))
+            except RuntimeError as exc:
+                progress_bar.empty()
+                st.error(f"**API error while searching '{segment}':**\n\n{exc}", icon="🚨")
+                if "403" in str(exc):
+                    st.info(
+                        "A 403 error means your Anthropic account does not have access to the "
+                        "web search tool. Enable it at **console.anthropic.com → Settings → "
+                        "Features** or contact Anthropic support.",
+                        icon="ℹ️",
+                    )
+                elif "401" in str(exc):
+                    st.info("A 401 error means the Anthropic API key is invalid or expired. Check the key in Streamlit secrets.", icon="ℹ️")
+                st.stop()
             processed = lf.post_process(list(all_raw))
             st.session_state.leads = processed
             if processed:

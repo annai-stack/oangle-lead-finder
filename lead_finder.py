@@ -125,13 +125,20 @@ def search_segment(client: anthropic.Anthropic, segment: str) -> list[dict]:
 
     max_continuations = 5
     for _ in range(max_continuations):
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            tools=[{"type": "web_search_20260209", "name": "web_search"}],
-            messages=messages,
-        )
+        try:
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=4096,
+                system=SYSTEM_PROMPT,
+                tools=[{"type": "web_search_20260209", "name": "web_search"}],
+                messages=messages,
+            )
+        except anthropic.APIStatusError as exc:
+            raise RuntimeError(
+                f"Anthropic API error {exc.status_code}: {exc.message}"
+            ) from exc
+        except anthropic.APIConnectionError as exc:
+            raise RuntimeError(f"Anthropic connection error: {exc}") from exc
 
         if response.stop_reason == "end_turn":
             break
