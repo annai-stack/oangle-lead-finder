@@ -237,7 +237,7 @@ def _render_account_leads(leads_df: pd.DataFrame, key: str, download_label: str)
         filtered = filtered[filtered["Grant"] == "Y"]
 
     st.markdown(f"**{len(filtered)} leads shown**")
-    styled = filtered.style.applymap(_color_score, subset=["Score"])
+    styled = filtered.style.map(_color_score, subset=["Score"])
     st.dataframe(styled, use_container_width=True, hide_index=True, height=480)
 
     st.markdown("---")
@@ -281,7 +281,11 @@ def _render_contact_leads(
     """Contact enrichment UI: company selector → fetch → display + download."""
 
     if not apollo_key:
-        st.warning("Add your Apollo.io API key in the sidebar to use Contact Leads.", icon="🔑")
+        st.warning(
+            "Apollo API key not found. Switch **Lead List Type → Contact Leads** in the sidebar to enter your key, "
+            "or add `APOLLO_API_KEY` to your Streamlit secrets.",
+            icon="🔑",
+        )
         return
 
     st.markdown("#### Select Companies to Enrich")
