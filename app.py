@@ -288,47 +288,45 @@ def _render_contact_leads(
         )
         return
 
-    st.markdown("#### Select Companies to Enrich")
     brand_options = leads_df["Brand"].dropna().unique().tolist()
 
-    select_all = st.checkbox("Select all companies", value=True, key=f"all_{contacts_key}")
-    if select_all:
-        selected_brands = brand_options
-        st.caption(f"{len(brand_options)} companies selected")
-    else:
-        selected_brands = st.multiselect(
-            "Choose companies",
-            options=brand_options,
-            default=brand_options[:3] if len(brand_options) >= 3 else brand_options,
-            key=f"brands_{contacts_key}",
+    # Fetch controls (manual re-fetch or first fetch for Previous Runs)
+    with st.expander("🔍 Fetch / re-fetch contacts", expanded=st.session_state[contacts_key].empty):
+        select_all = st.checkbox("Select all companies", value=True, key=f"all_{contacts_key}")
+        if select_all:
+            selected_brands = brand_options
+            st.caption(f"{len(brand_options)} companies selected")
+        else:
+            selected_brands = st.multiselect(
+                "Choose companies",
+                options=brand_options,
+                default=brand_options[:3] if len(brand_options) >= 3 else brand_options,
+                key=f"brands_{contacts_key}",
+            )
+
+        fetch_btn = st.button(
+            f"🔍  Fetch contacts for {len(selected_brands) if selected_brands else 0} {'company' if len(selected_brands) == 1 else 'companies'}",
+            key=f"fetch_{contacts_key}",
+            type="primary",
+            disabled=not selected_brands,
         )
 
-    if not selected_brands:
-        st.info("Select at least one company to continue.")
-        return
+        if fetch_btn and selected_brands:
+            progress_bar = st.progress(0, text="Starting Apollo enrichment…")
 
-    fetch_btn = st.button(
-        f"🔍  Fetch contacts for {len(selected_brands)} {'company' if len(selected_brands) == 1 else 'companies'}",
-        key=f"fetch_{contacts_key}",
-        type="primary",
-    )
+            def _progress(i, total, brand):
+                progress_bar.progress(i / total, text=f"Fetching: **{brand}** ({i + 1}/{total})")
 
-    if fetch_btn:
-        progress_bar = st.progress(0, text="Starting Apollo enrichment…")
-
-        def _progress(i, total, brand):
-            progress_bar.progress(i / total, text=f"Fetching: **{brand}** ({i + 1}/{total})")
-
-        result_df = apollo_client.enrich_leads(
-            api_key=apollo_key,
-            leads_df=leads_df,
-            brand_filter=selected_brands,
-            titles=contact_titles or None,
-            max_per_company=max_contacts,
-            progress_callback=_progress,
-        )
-        progress_bar.progress(1.0, text=f"✅ Done — {len(result_df)} rows fetched")
-        st.session_state[contacts_key] = result_df
+            result_df = apollo_client.enrich_leads(
+                api_key=apollo_key,
+                leads_df=leads_df,
+                brand_filter=selected_brands,
+                titles=contact_titles or None,
+                max_per_company=max_contacts,
+                progress_callback=_progress,
+            )
+            progress_bar.progress(1.0, text=f"✅ Done — {len(result_df)} rows fetched")
+            st.session_state[contacts_key] = result_df
 
     contacts_df: pd.DataFrame = st.session_state[contacts_key]
 
@@ -468,7 +466,29 @@ if run_btn:
         if processed:
             results_placeholder.dataframe(_leads_to_df(processed), use_container_width=True, hide_index=True)
 
-    progress_bar.progress(1.0, text=f"✅ Done — {len(st.session_state.leads)} unique leads")
+    progress_bar.progress(1.0, text=f"✅ Step 1 done — {len(st.session_state.leads)} unique leads found")
+
+    # Auto-enrich with Apollo when Contact Leads mode is selected
+    if view_mode == "Contact Leads":
+        if not apollo_key:
+            st.warning("Apollo API key not configured — skipping contact enrichment.", icon="🔑")
+        else:
+            results_placeholder.empty()
+            leads_df_run = _leads_to_df(st.session_state.leads)
+            apollo_bar = st.progress(0, text="Step 2: Fetching contacts from Apollo…")
+
+            def _run_progress(i, total, brand):
+                apollo_bar.progress(i / total, text=f"Apollo: **{brand}** ({i + 1}/{total})")
+
+            st.session_state.contacts_run = apollo_client.enrich_leads(
+                api_key=apollo_key,
+                leads_df=leads_df_run,
+                brand_filter=None,
+                titles=contact_titles or None,
+                max_per_company=max_contacts,
+                progress_callback=_run_progress,
+            )
+            apollo_bar.progress(1.0, text=f"✅ Done — contacts fetched for {leads_df_run['Brand'].nunique()} companies")
 
 # ---------------------------------------------------------------------------
 # Tabs
