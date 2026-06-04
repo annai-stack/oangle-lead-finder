@@ -77,9 +77,53 @@ with st.sidebar:
         options=all_segments,
         default=all_segments,
     )
-    max_leads     = st.slider("Max leads per segment", 1, 15, lf.MAX_LEADS_PER_SEGMENT)
-    min_score     = st.slider("Minimum fit score", 1, 5, lf.MIN_FIT_SCORE)
+    max_leads      = st.slider("Max leads per segment", 1, 15, lf.MAX_LEADS_PER_SEGMENT)
+    min_score      = st.slider("Minimum fit score", 1, 5, lf.MIN_FIT_SCORE)
     require_source = st.checkbox("Require source URL", value=lf.REQUIRE_SOURCE_URL)
+
+    st.markdown("---")
+    st.subheader("📋 Lead List Type")
+    view_mode = st.radio(
+        "Choose what to build",
+        ["Account Leads", "Contact Leads"],
+        captions=[
+            "Company info only — ranked prospect list",
+            "Company info + decision-maker contacts from Apollo",
+        ],
+        label_visibility="collapsed",
+    )
+
+    # --- Apollo.io (only relevant for Contact Leads) ---
+    _apollo_secret = (
+        st.secrets.get("APOLLO_API_KEY", "")
+        if hasattr(st, "secrets")
+        else os.environ.get("APOLLO_API_KEY", "")
+    )
+    if view_mode == "Contact Leads":
+        st.markdown("---")
+        st.subheader("🔗 Apollo.io")
+        if _apollo_secret:
+            apollo_key = _apollo_secret
+            st.success("Apollo key configured", icon="🔒")
+        else:
+            apollo_key = st.text_input(
+                "Apollo API Key",
+                type="password",
+                placeholder="your-apollo-api-key",
+                help="Required for Contact Leads enrichment.",
+            )
+        max_contacts = st.slider("Max contacts per company", 1, 10, 3)
+        title_presets = apollo_client.DEFAULT_TITLES
+        contact_titles = st.multiselect(
+            "Contact title filter",
+            options=title_presets,
+            default=title_presets,
+            help="Apollo returns only people matching these job titles.",
+        )
+    else:
+        apollo_key     = _apollo_secret
+        max_contacts   = 3
+        contact_titles = apollo_client.DEFAULT_TITLES
 
     st.markdown("---")
     st.subheader("🤝 Warm Intro Brands")
@@ -89,36 +133,8 @@ with st.sidebar:
         height=100,
     )
 
-    run_btn = st.button("🚀  Run Lead Finder", type="primary", use_container_width=True)
-
-    # --- Apollo.io ---
-    st.markdown("---")
-    st.subheader("🔗 Apollo.io (Contact Leads)")
-    _apollo_secret = (
-        st.secrets.get("APOLLO_API_KEY", "")
-        if hasattr(st, "secrets")
-        else os.environ.get("APOLLO_API_KEY", "")
-    )
-    if _apollo_secret:
-        apollo_key = _apollo_secret
-        st.success("Apollo key configured", icon="🔒")
-    else:
-        apollo_key = st.text_input(
-            "Apollo API Key",
-            type="password",
-            placeholder="your-apollo-api-key",
-            help="Required for Contact Leads enrichment.",
-        )
-
-    max_contacts = st.slider("Max contacts per company", 1, 10, 3)
-
-    title_presets = apollo_client.DEFAULT_TITLES
-    contact_titles = st.multiselect(
-        "Contact title filter",
-        options=title_presets,
-        default=title_presets,
-        help="Apollo returns only people matching these job titles.",
-    )
+    run_label = "🚀  Run Account Lead Finder" if view_mode == "Account Leads" else "🚀  Run Contact Lead Finder"
+    run_btn = st.button(run_label, type="primary", use_container_width=True)
 
 # ---------------------------------------------------------------------------
 # Header
@@ -398,20 +414,15 @@ def _render_contact_leads(
                 st.markdown("---")
 
 
-def _render_results(leads_df: pd.DataFrame, contacts_key: str, key: str, account_download_label: str) -> None:
-    """Top-level results renderer: Account Leads / Contact Leads toggle."""
-
-    view_mode = st.radio(
-        "Lead List Type",
-        ["Account Leads", "Contact Leads"],
-        horizontal=True,
-        key=f"mode_{key}",
-        help="Account Leads: company data only. Contact Leads: enrich with Apollo contact data.",
-    )
-
-    st.markdown("---")
-
-    if view_mode == "Account Leads":
+def _render_results(
+    leads_df: pd.DataFrame,
+    contacts_key: str,
+    key: str,
+    account_download_label: str,
+    mode: str = "Account Leads",
+) -> None:
+    """Render Account Leads or Contact Leads depending on sidebar mode selection."""
+    if mode == "Account Leads":
         _render_account_leads(leads_df, key=key, download_label=account_download_label)
     else:
         _render_contact_leads(leads_df, contacts_key=contacts_key)
@@ -464,24 +475,37 @@ tab_run, tab_prev = st.tabs(["🚀 New Run", "📁 Previous Runs"])
 # --- Tab 1: New Run ---
 with tab_run:
     if st.session_state.leads:
+        st.caption(f"Showing results as: **{view_mode}**")
+        st.markdown("---")
         _render_results(
             leads_df=_leads_to_df(st.session_state.leads),
             contacts_key="contacts_run",
             key="run",
             account_download_label="⬇️  Download Account Leads",
+            mode=view_mode,
         )
     else:
-        st.info("Configure your run in the sidebar and click **Run Lead Finder** to start.", icon="👈")
-        st.markdown("""
-        **What this tool does:**
-        - Searches the web for F&B chains in Singapore across 6 segments
-        - Scores each prospect 1–5 against Oangle's ideal customer profile
-        - Flags warm intros (Subway, KFC, Guzman) and grant-eligible leads
-
-        **Lead List Types:**
-        - **Account Leads** — ranked company list ready for the sales team
-        - **Contact Leads** — enriched with decision-maker contacts from Apollo.io
-        """)
+        st.info(
+            f"Select **{view_mode}** in the sidebar and click **{('Run Account Lead Finder' if view_mode == 'Account Leads' else 'Run Contact Lead Finder')}** to start.",
+            icon="👈",
+        )
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+**Account Leads**
+- Ranked list of F&B companies
+- Outlet count, fit score, segment
+- Grant eligible & warm intro flags
+- Ready for outreach as-is
+            """)
+        with col2:
+            st.markdown("""
+**Contact Leads**
+- Everything in Account Leads, plus:
+- Decision-maker name & title
+- Work email & phone
+- LinkedIn URL (via Apollo.io)
+            """)
 
 # --- Tab 2: Previous Runs ---
 with tab_prev:
@@ -494,19 +518,29 @@ with tab_prev:
     if not csv_files:
         st.info("No previous runs found in the lead-finder directory.", icon="📂")
     else:
-        file_labels = [p.name for p in csv_files]
-        selected_label = st.selectbox(f"Select a run ({len(csv_files)} available)", options=file_labels)
-        selected_path  = LEAD_FINDER_DIR / selected_label
+        pcol1, pcol2 = st.columns([3, 1])
+        with pcol1:
+            file_labels   = [p.name for p in csv_files]
+            selected_label = st.selectbox(f"Select a run ({len(csv_files)} available)", options=file_labels)
+        with pcol2:
+            prev_mode = st.radio(
+                "View as",
+                ["Account Leads", "Contact Leads"],
+                key="prev_mode",
+            )
+
+        selected_path = LEAD_FINDER_DIR / selected_label
 
         try:
             prev_df = _csv_to_display_df(selected_path)
-            st.caption(f"Loaded: `{selected_path}`  ·  {len(prev_df)} leads")
+            st.caption(f"Loaded: `{selected_label}`  ·  {len(prev_df)} leads")
             st.markdown("---")
             _render_results(
                 leads_df=prev_df,
                 contacts_key="contacts_prev",
                 key=f"prev_{selected_label}",
                 account_download_label=f"⬇️  Download {selected_label}",
+                mode=prev_mode,
             )
         except Exception as exc:
             st.error(f"Could not load file: {exc}")
