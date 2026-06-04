@@ -48,7 +48,7 @@ def search_contacts(
     """Search Apollo for contacts at a given company domain."""
     payload: dict = {
         "api_key": api_key,
-        "q_organization_domains_list": [domain],
+        "q_organization_domains": domain,   # comma-sep string, not array
         "page": 1,
         "per_page": max_results,
     }
@@ -61,7 +61,15 @@ def search_contacts(
         headers={"Content-Type": "application/json", "Cache-Control": "no-cache"},
         timeout=20,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text
+        raise requests.HTTPError(
+            f"{resp.status_code} — {detail}",
+            response=resp,
+        )
     data = resp.json()
 
     contacts = []
@@ -138,8 +146,7 @@ def enrich_leads(
                         "LinkedIn":      c["linkedin_url"],
                     })
         except requests.HTTPError as exc:
-            code = exc.response.status_code if exc.response is not None else "?"
-            rows.append({**base, **_empty_contact(f"[Apollo API error {code}]")})
+            rows.append({**base, **_empty_contact(f"[Apollo error: {exc}]")})
         except Exception as exc:
             rows.append({**base, **_empty_contact(f"[Error: {exc}]")})
 
