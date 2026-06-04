@@ -89,6 +89,18 @@ with st.sidebar:
     else:
         apollo_key = st.text_input("🔗 Apollo API Key", type="password", placeholder="apollo-key...")
 
+    # Hunter.io
+    _hunter_secret = (
+        st.secrets.get("HUNTER_API_KEY", "")
+        if hasattr(st, "secrets")
+        else os.environ.get("HUNTER_API_KEY", "")
+    )
+    if _hunter_secret:
+        hunter_key = _hunter_secret
+        st.success("Hunter.io key configured", icon="🔒")
+    else:
+        hunter_key = st.text_input("🔍 Hunter.io API Key", type="password", placeholder="hunter-key...")
+
     _page = st.session_state.page
 
     # Account Leads run config
@@ -117,17 +129,25 @@ with st.sidebar:
         warm_brands_input = "\n".join(sorted(lf.WARM_INTRO_BRANDS))
         run_account_btn = False
 
-    # Contact Leads Apollo config
+    # Contact Leads config
     if _page == "new_run_contact":
         st.markdown("---")
-        st.subheader("⚙️ Apollo Config")
+        st.subheader("⚙️ Contact Config")
+        contact_source = st.radio(
+            "Data source",
+            ["Apollo.io", "Hunter.io", "Both"],
+            horizontal=True,
+            help="Apollo: names + emails + phones. Hunter: emails focused. Both: merged results.",
+        )
         max_contacts   = st.slider("Max contacts per company", 1, 10, 3)
         contact_titles = st.multiselect(
-            "Title filter",
+            "Title filter (Apollo)",
             options=apollo_client.DEFAULT_TITLES,
             default=apollo_client.DEFAULT_TITLES,
+            help="Only applies to Apollo searches.",
         )
     else:
+        contact_source = "Both"
         max_contacts   = 3
         contact_titles = apollo_client.DEFAULT_TITLES
 
@@ -460,8 +480,8 @@ def render_new_run_contact() -> None:
     st.caption("Enrich companies with Apollo.io contact data.")
     st.markdown("---")
 
-    if not apollo_key:
-        st.warning("Apollo API key required — add it in the sidebar.", icon="🔑")
+    if not apollo_key and not hunter_key:
+        st.warning("At least one API key required — add Apollo and/or Hunter.io key in the sidebar.", icon="🔑")
         return
 
     # ── Step 1: Source ────────────────────────────────────────────────────────
@@ -564,13 +584,14 @@ def render_new_run_contact() -> None:
                 progress_bar.progress(i / total, text=f"Fetching: **{brand}** ({i+1}/{total})")
 
             st.session_state.contacts = apollo_client.enrich_leads(
-                api_key=apollo_key,
                 leads_df=account_df_source,
                 brand_filter=selected_brands,
                 titles=contact_titles or None,
                 max_per_company=max_contacts,
                 progress_callback=_progress,
                 use_keyword=use_keyword,
+                apollo_key=apollo_key if contact_source in ("Apollo.io", "Both") else None,
+                hunter_key=hunter_key if contact_source in ("Hunter.io", "Both") else None,
             )
             progress_bar.progress(1.0, text="✅ Done")
 
