@@ -35,7 +35,9 @@ MODEL = DRAFT_MODEL                   # back-compat alias
 # serving results produced by an older prompt.
 # v2: contact enrichment no longer web-searches (built from Apollo data +
 #     company research) — cheaper and removes person-bio hallucination.
-PROMPT_VERSION = "v2"
+# v3: company enrichment also returns sector / why_it_scores / likely_use_case
+#     so directly-entered companies (no discovery pass) still get scored fields.
+PROMPT_VERSION = "v3"
 
 
 def _norm(s) -> str:
@@ -159,7 +161,13 @@ def _company_prompts(profile: dict, company: dict) -> tuple[str, str]:
         'company, each as a short numbered sentence. If none found, say so.",\n'
         '  "how_to_target": "3-4 specific, evidence-based angles for how '
         f'{cn} should approach this company, tied to our value proposition'
-        + (' and the detected technology stack' if tech_hint else '') + '."\n'
+        + (' and the detected technology stack' if tech_hint else '') + '.",\n'
+        '  "sector": "the company\'s primary industry / sector in a few words.",\n'
+        '  "why_it_scores": "1-2 sentences of concrete signals (PR, hiring, funding, '
+        'tech, expansion) that show how well this company fits our ideal customer '
+        'profile — the evidence behind its priority.",\n'
+        '  "likely_use_case": "the single most likely workload / engagement angle for '
+        'our offering at this company."\n'
         "}"
     )
     return system, user
@@ -170,6 +178,9 @@ def _finalize_company(obj: dict) -> dict:
         "company_topline": obj.get("company_topline", ""),
         "company_press":   obj.get("company_press", ""),
         "how_to_target":   obj.get("how_to_target", ""),
+        "sector":          obj.get("sector", ""),
+        "why_it_scores":   obj.get("why_it_scores", ""),
+        "likely_use_case": obj.get("likely_use_case", ""),
     }
 
 
@@ -441,6 +452,14 @@ def build_record(profile: dict, company: dict, contact: dict,
         "segment":            company.get("segment", ""),
         "fit_reason":         company.get("fit_reason", ""),
         "source_url":         company.get("source_url", ""),
+        # Generic account-scoring fields. Prefer the discovery values; fall back
+        # to company enrichment so directly-entered companies (no discovery pass)
+        # still carry them. Works for every client, not just those whose
+        # account_columns list these keys.
+        "sector":             company.get("sector") or company.get("industry") or company_enrich.get("sector", ""),
+        "why_it_scores":      company.get("why_it_scores") or company_enrich.get("why_it_scores", ""),
+        "likely_use_case":    company.get("likely_use_case") or company_enrich.get("likely_use_case", ""),
+        "priority_band":      company.get("priority_band", ""),
     }
     # Carry any client-specific account-context fields (from client_config
     # account_columns) straight from the company dict — keeps build_record
