@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Lead Insights — Oangle Lead Finder</title>
+<style>
+  :root{
+    --bg:#0b0f17;
+    --bg2:#0f1622;
+    --ink:#eef2f8;
+    --muted:#93a1b5;
+    --faint:#5e6b80;
+    --accent:#ff8a3d;
+    --accent-soft:rgba(255,138,61,.14);
+    --line:#1d2736;
+    --card:#121a28;
+    --good:#3ddc97;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* progress bar */
+  #bar{position:fixed;top:0;left:0;height:3px;background:var(--accent);width:0;z-index:50;transition:width .4s cubic-bezier(.2,.7,.2,1)}
+  #counter{position:fixed;bottom:22px;right:28px;color:var(--faint);font-size:13px;letter-spacing:.04em;z-index:50;font-variant-numeric:tabular-nums}
+  #hint{position:fixed;bottom:22px;left:28px;color:var(--faint);font-size:12px;letter-spacing:.04em;z-index:50}
+
+  .slide{
+    position:fixed;inset:0;
+    display:none;
+    flex-direction:column;
+    justify-content:center;
+    padding:7vh 9vw;
+    opacity:0;
+    transition:opacity .45s ease, transform .45s ease;
+    transform:translateY(14px);
+  }
+  .slide.active{display:flex;opacity:1;transform:translateY(0)}
+
+  /* print mode reveals all */
+  body.print-mode{overflow:auto}
+  body.print-mode .slide{position:relative;display:flex;opacity:1;transform:none;min-height:100vh;border-bottom:1px solid var(--line);page-break-after:always}
+  body.print-mode #bar,body.print-mode #counter,body.print-mode #hint{display:none}
+
+  .kicker{
+    color:var(--accent);
+    font-size:clamp(.8rem,1.4vw,1rem);
+    font-weight:600;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    margin-bottom:1.4rem;
+  }
+  h1{font-size:clamp(2.2rem,6.5vw,5rem);line-height:1.02;font-weight:800;letter-spacing:-.02em}
+  h2{font-size:clamp(1.9rem,4.6vw,3.3rem);line-height:1.06;font-weight:780;letter-spacing:-.02em;margin-bottom:1.6rem}
+  .lead{font-size:clamp(1.05rem,1.9vw,1.5rem);color:var(--muted);line-height:1.5;max-width:54ch;font-weight:400}
+  .sub{color:var(--faint);font-size:clamp(.95rem,1.5vw,1.15rem);margin-top:2.2rem;letter-spacing:.02em}
+  .accent{color:var(--accent)}
+  .nowrap{white-space:nowrap}
+
+  ul.points{list-style:none;margin-top:2rem;max-width:60ch}
+  ul.points li{
+    position:relative;padding-left:1.7rem;margin-bottom:1.1rem;
+    font-size:clamp(1rem,1.7vw,1.35rem);color:var(--ink);line-height:1.45;
+  }
+  ul.points li::before{content:"";position:absolute;left:0;top:.62em;width:9px;height:9px;border-radius:2px;background:var(--accent)}
+  ul.points li b{font-weight:680}
+  ul.points li span{color:var(--muted)}
+
+  /* stat callouts */
+  .stats{display:flex;gap:clamp(2rem,6vw,5rem);flex-wrap:wrap;margin-top:1rem}
+  .stat .num{font-size:clamp(2.6rem,7vw,5.5rem);font-weight:820;letter-spacing:-.03em;line-height:1;color:var(--accent)}
+  .stat .lbl{color:var(--muted);font-size:clamp(.9rem,1.4vw,1.1rem);margin-top:.7rem;max-width:22ch}
+
+  /* pipeline */
+  .pipe{display:flex;align-items:stretch;gap:0;margin-top:2.4rem;flex-wrap:wrap}
+  .pstep{
+    flex:1 1 0;min-width:170px;background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:1.3rem 1.2rem;position:relative;
+  }
+  .pstep .n{color:var(--accent);font-weight:700;font-size:.85rem;letter-spacing:.1em}
+  .pstep h3{font-size:clamp(1.05rem,1.7vw,1.4rem);margin:.5rem 0 .5rem;font-weight:720}
+  .pstep p{color:var(--muted);font-size:clamp(.82rem,1.15vw,.98rem);line-height:1.4}
+  .arrow{display:flex;align-items:center;color:var(--faint);font-size:1.8rem;padding:0 .5rem}
+  @media(max-width:900px){.arrow{transform:rotate(90deg)}}
+
+  /* generic cards grid */
+  .grid{display:grid;gap:1.1rem;margin-top:2.2rem}
+  .grid.c2{grid-template-columns:repeat(2,1fr)}
+  .grid.c3{grid-template-columns:repeat(3,1fr)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1.5rem 1.5rem}
+  .card h3{font-size:clamp(1.05rem,1.7vw,1.35rem);font-weight:720;margin-bottom:.6rem;display:flex;align-items:center;gap:.6rem}
+  .card h3 .tag{font-size:.65rem;letter-spacing:.1em;font-weight:700;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);padding:.25rem .5rem;border-radius:6px}
+  .card p,.card li{color:var(--muted);font-size:clamp(.85rem,1.25vw,1.02rem);line-height:1.5}
+  .card ul{list-style:none;margin-top:.3rem}
+  .card ul li{padding-left:1rem;position:relative;margin-bottom:.35rem}
+  .card ul li::before{content:"–";position:absolute;left:0;color:var(--accent)}
+
+  /* table */
+  table{width:100%;border-collapse:collapse;margin-top:2rem;font-size:clamp(.85rem,1.3vw,1.1rem)}
+  th,td{text-align:left;padding:.85rem 1rem;border-bottom:1px solid var(--line)}
+  th{color:var(--faint);font-weight:600;font-size:.8rem;letter-spacing:.1em;text-transform:uppercase}
+  td{color:var(--ink)}
+  td.v{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.best td{background:var(--accent-soft)}
+  td .note{color:var(--muted);font-size:.85em}
+
+  .pill{display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:.45rem .95rem;margin:.3rem .3rem 0 0;font-size:clamp(.8rem,1.2vw,1rem);color:var(--ink)}
+  .pill.hot{border-color:var(--accent);color:var(--accent)}
+
+  .status-row{display:flex;align-items:flex-start;gap:.8rem;margin-bottom:1rem;font-size:clamp(.95rem,1.5vw,1.2rem)}
+  .status-row .dot{flex:none;margin-top:.45em;width:12px;height:12px;border-radius:50%}
+  .dot.live{background:var(--good)}
+  .dot.pend{background:var(--accent)}
+  .dot.next{background:var(--faint)}
+  .status-row span{color:var(--muted)}
+  .status-row b{color:var(--ink);font-weight:680}
+
+  .footer-note{position:absolute;bottom:6vh;left:9vw;color:var(--faint);font-size:.85rem;letter-spacing:.04em}
+
+  /* ---- in-browser editor chrome (hidden unless Supabase is configured) ---- */
+  #editbar{position:fixed;top:14px;left:14px;z-index:80;display:none;gap:.4rem;align-items:center;
+    background:rgba(18,26,40,.92);border:1px solid var(--line);border-radius:10px;padding:.4rem .5rem;backdrop-filter:blur(6px)}
+  #editbar button{font:inherit;font-size:.82rem;color:var(--ink);background:#1b2433;border:1px solid var(--line);
+    border-radius:7px;padding:.4rem .7rem;cursor:pointer;transition:background .15s,border-color .15s}
+  #editbar button:hover{background:#243044;border-color:var(--accent)}
+  #editbar button.primary{background:var(--accent);color:#0b0f17;border-color:var(--accent);font-weight:700}
+  #editStatus{color:var(--muted);font-size:.78rem;margin-left:.3rem;min-width:1ch}
+  body.editing .slide{cursor:auto}
+  body.editing [data-ek]{outline:1px dashed rgba(255,138,61,.35);outline-offset:3px;border-radius:3px;transition:outline-color .15s}
+  body.editing [data-ek]:hover{outline-color:var(--accent)}
+  body.editing [data-ek]:focus{outline:2px solid var(--accent);background:rgba(255,138,61,.06)}
+  #histPanel{position:fixed;top:60px;left:14px;z-index:80;display:none;width:340px;max-height:70vh;overflow:auto;
+    background:rgba(15,22,34,.97);border:1px solid var(--line);border-radius:12px;padding:.6rem;backdrop-filter:blur(8px)}
+  #histPanel h4{font-size:.85rem;color:var(--muted);margin:.2rem .4rem .5rem;letter-spacing:.06em;text-transform:uppercase}
+  .hist-item{border:1px solid var(--line);border-radius:8px;padding:.55rem .65rem;margin-bottom:.45rem}
+  .hist-item .meta{font-size:.78rem;color:var(--muted);line-height:1.4}
+  .hist-item .acts{margin-top:.4rem;display:flex;gap:.4rem}
+  .hist-item button{font:inherit;font-size:.74rem;color:var(--ink);background:#1b2433;border:1px solid var(--line);border-radius:6px;padding:.3rem .55rem;cursor:pointer}
+  .hist-item button:hover{border-color:var(--accent)}
+
+  /* ---- interactivity: hover lift on pipeline steps + cards ---- */
+  .pstep,.card{transition:transform .16s ease, border-color .16s ease}
+  .pstep:hover,.card:hover{border-color:var(--accent);transform:translateY(-3px)}
+  .cluster{cursor:pointer}
+  .cluster.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  #clusterDetail{min-height:2.6em;transition:opacity .2s ease}
+
+  /* ---- in-deck UI mockup (browser-framed live console) ---- */
+  .browser{max-width:1020px;margin:1.4rem auto 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0e1521;box-shadow:0 24px 60px rgba(0,0,0,.45)}
+  .browser .bar{display:flex;align-items:center;gap:.45rem;padding:.55rem .9rem;background:#0a0f18;border-bottom:1px solid var(--line)}
+  .browser .bar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .dot-r{background:#ff5f56}.dot-y{background:#ffbd2e}.dot-g{background:#27c93f}
+  .browser .url{margin-left:.6rem;color:var(--faint);font-size:.78rem;background:#0e1521;border:1px solid var(--line);border-radius:6px;padding:.22rem .7rem}
+  .console{display:grid;grid-template-columns:210px 1fr;min-height:330px}
+  .side{background:#0b111c;border-right:1px solid var(--line);padding:.9rem .8rem;font-size:.8rem}
+  .side h4{color:var(--muted);font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;margin:.3rem 0 .55rem}
+  .tog{display:flex;align-items:center;gap:.5rem;color:var(--ink);margin-bottom:1.1rem;font-size:.82rem}
+  .tog .sw{width:34px;height:18px;background:var(--accent);border-radius:99px;position:relative;flex:none}
+  .tog .sw::after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+  .fld{background:#0e1521;border:1px solid var(--line);border-radius:7px;padding:.42rem .6rem;color:var(--muted);margin-bottom:.45rem}
+  .mbtn{background:var(--accent);color:#0b0f17;font-weight:700;border-radius:7px;padding:.5rem;text-align:center;margin-top:.2rem;cursor:pointer}
+  .main{padding:.95rem 1.05rem}
+  .mtitle{font-weight:800;font-size:1.05rem;margin-bottom:.65rem}
+  .mmetrics{display:flex;gap:.55rem;margin-bottom:.85rem;flex-wrap:wrap}
+  .tile{flex:1;min-width:74px;background:#0e1521;border:1px solid var(--line);border-radius:8px;padding:.5rem .6rem}
+  .tile .v{font-size:1.35rem;font-weight:800;color:var(--accent);line-height:1}
+  .tile .k{color:var(--faint);font-size:.66rem;margin-top:.25rem}
+  .tabs{display:flex;gap:.4rem;margin-bottom:.65rem}
+  .tab{cursor:pointer;font-size:.78rem;padding:.32rem .8rem;border-radius:7px;border:1px solid var(--line);color:var(--muted);transition:all .12s}
+  .tab.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .tab:hover{border-color:var(--accent)}
+  .pane{display:none}.pane.on{display:block}
+  .mrow{display:grid;grid-template-columns:48px 1.5fr 1.5fr 60px;gap:.5rem;align-items:center;padding:.45rem .35rem;border-bottom:1px solid var(--line);font-size:.8rem;color:var(--ink)}
+  .mrow.h{color:var(--faint);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase}
+  .hb{font-weight:700;font-size:.7rem;color:#0b0f17;border-radius:4px;padding:.08rem .35rem;text-align:center;display:inline-block}
+  .mcard2{background:#0e1521;border:1px solid var(--line);border-radius:10px;padding:.9rem}
+  .mcard2 .para{background:rgba(61,220,151,.08);border:1px solid rgba(61,220,151,.3);border-radius:8px;padding:.65rem;color:var(--ink);font-size:.82rem;margin-top:.55rem;line-height:1.45}
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="counter"></div>
+<div id="hint">← → / space &nbsp;·&nbsp; P = print</div>
+
+<!-- In-browser editor toolbar — stays hidden until Supabase is configured below -->
+<div id="editbar">
+  <button id="editToggle">Edit</button>
+  <button id="saveBtn" class="primary" style="display:none">Save</button>
+  <button id="historyBtn" style="display:none">History</button>
+  <button id="exportBtn" style="display:none">Export Excel</button>
+  <button id="doneBtn" style="display:none">Done</button>
+  <span id="editStatus"></span>
+</div>
+<div id="histPanel"><h4>Version history</h4><div id="histList"></div></div>
+
+<!-- 1 — TITLE -->
+<section class="slide active">
+  <div class="kicker">Oangle · F&amp;B Outbound · Singapore</div>
+  <h1>AI&nbsp;Lead&nbsp;Insights<br><span class="accent">Lead Finder</span></h1>
+  <p class="lead" style="margin-top:1.8rem">One command turns a target segment into a research-backed, contact-level sales spreadsheet — ranked by how hot the lead is.</p>
+  <div class="sub">Built by AKIN for Oangle restaurant technology</div>
+</section>
+
+<!-- 2 — PROBLEM -->
+<section class="slide">
+  <div class="kicker">The problem</div>
+  <h2>Good outbound dies in the research.</h2>
+  <p class="lead">Finding the right F&amp;B chains, the real decision-makers inside them, and a credible reason to reach out is hours of manual work per lead — so reps either send generic blasts or never send at all.</p>
+  <ul class="points">
+    <li><b>Who</b> <span>— which multi-outlet operators actually fit the product?</span></li>
+    <li><b>Whom</b> <span>— the owner / COO / IT lead, with a real email and LinkedIn?</span></li>
+    <li><b>Why now</b> <span>— a personalised angle, not a templated cold open?</span></li>
+  </ul>
+</section>
+
+<!-- 3 — SOLUTION -->
+<section class="slide">
+  <div class="kicker">The solution</div>
+  <h2>A pipeline that researches like an SDR — then checks its own work.</h2>
+  <p class="lead">Point it at a segment (or an existing account list). It sources companies, finds decision-makers, deep-researches each one with Claude + live web search, and exports the finished 23-column outreach sheet.</p>
+  <ul class="points">
+    <li><b>Contact-level, not company-level</b> <span>— real names, emails, LinkedIn.</span></li>
+    <li><b>Personalised</b> <span>— a tailored sales paragraph and value-prop fit per person.</span></li>
+    <li><b>Prioritised</b> <span>— every lead carries a 1A→4 heat rank from a fixed rubric.</span></li>
+  </ul>
+</section>
+
+<!-- 4 — HOW IT WORKS -->
+<section class="slide">
+  <div class="kicker">How it works · 5-stage pipeline</div>
+  <h2>Segment in → verified, ranked sheet out.</h2>
+  <div class="pipe">
+    <div class="pstep"><div class="n">1 · DISCOVER</div><h3>Companies</h3><p>Web search across F&amp;B segments (or reuse a list); each scored for fit.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep"><div class="n">2 · CONTACTS</div><h3>Decision-makers</h3><p>Hunter + Apollo pull the right roles; Apollo adds firmographics, BuiltWith adds tech signal.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep"><div class="n">3 · ENRICH</div><h3>Research</h3><p>Claude researches the company; the personalised outreach is grounded in that + the contact's real data.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep"><div class="n">4 · VERIFY</div><h3>Check</h3><p>Email validated, source URLs resolved, claims cross-checked → a real confidence score.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep"><div class="n">5 · DELIVER</div><h3>Export</h3><p>23-column sheet + Review tab, live in the console, saved to the database.</p></div>
+  </div>
+  <div class="sub">Sources: Anthropic Claude (web search) · Hunter · Apollo · BuiltWith · Supabase (history + cache)</div>
+</section>
+
+<!-- 5 — INPUTS overview -->
+<section class="slide">
+  <div class="kicker">Inputs · what you feed it</div>
+  <h2>Four inputs. Three are set once.</h2>
+  <div class="grid c2">
+    <div class="card"><h3>1 · API keys <span class="tag">once</span></h3><ul>
+      <li><b>Anthropic</b> — enrichment &amp; polish <i>(required)</i></li>
+      <li><b>Hunter</b> — real emails / LinkedIn <i>(required)</i></li>
+      <li><b>Apollo</b> — firmographics, company size <i>(required)</i></li>
+      <li><b>BuiltWith</b> — tech signal <i>(optional)</i></li>
+    </ul></div>
+    <div class="card"><h3>2 · Company source <span class="tag">per run</span></h3><ul>
+      <li><b>Existing CSV</b> — reuse a prior account list (free, no search)</li>
+      <li><b>Fresh web search</b> — discover new companies by segment</li>
+    </ul></div>
+    <div class="card"><h3>3 · Run configuration <span class="tag">per run</span></h3><ul>
+      <li>Max companies · contacts per company</li>
+      <li>Title &amp; seniority filters · contact source</li>
+      <li>Draft / premium model · batch mode</li>
+    </ul></div>
+    <div class="card"><h3>4 · Client profile <span class="tag">once</span></h3><ul>
+      <li>ICP, target titles, value prop, scoring rubric</li>
+      <li>New client = <b>one dict entry</b>, no code changes</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- 6 — INPUT: targeting -->
+<section class="slide">
+  <div class="kicker">Inputs · who it hunts (Oangle profile)</div>
+  <h2>The ICP is configuration, not code.</h2>
+  <p class="lead" style="margin-bottom:.4rem">Segments searched:</p>
+  <div>
+    <span class="pill hot">Fast food chains</span>
+    <span class="pill hot">Bubble tea &amp; kiosks</span>
+    <span class="pill hot">QSR</span>
+    <span class="pill hot">Cloud kitchens</span>
+    <span class="pill hot">Cafe chains</span>
+    <span class="pill hot">Food courts</span>
+  </div>
+  <p class="lead" style="margin:2rem 0 .4rem">Decision-maker titles pulled:</p>
+  <div>
+    <span class="pill">Owner / Founder</span>
+    <span class="pill">CEO / COO</span>
+    <span class="pill">Managing Director</span>
+    <span class="pill">Ops / IT Director</span>
+    <span class="pill">Regional / GM</span>
+    <span class="pill">Procurement</span>
+  </div>
+  <div class="sub">Targets multi-outlet, standardised-menu operators · skips single-outlet, fine-dining, made-to-order.</div>
+</section>
+
+<!-- 7 — OUTPUT overview -->
+<section class="slide">
+  <div class="kicker">Output · what you get back</div>
+  <h2>One row per contact. 23 columns. Ready to send.</h2>
+  <div class="stats">
+    <div class="stat"><div class="num">100+</div><div class="lbl">leads per run — from a quick 10-lead test to a full batch, set by one number</div></div>
+    <div class="stat"><div class="num">23+</div><div class="lbl">reference columns + 3 verification &amp; account-context columns (confidence, email, fit)</div></div>
+    <div class="stat"><div class="num">3</div><div class="lbl">deliverables: Excel (+ Review tab) · live console · saved history</div></div>
+    <div class="stat"><div class="num">1A→4</div><div class="lbl">heat rank on every row — sheet sorted hottest-first</div></div>
+  </div>
+  <div class="sub">Output file: <span class="accent">AI_Lead_Insights_oangle_&lt;timestamp&gt;.xlsx</span></div>
+</section>
+
+<!-- 8 — OUTPUT breakdown -->
+<section class="slide">
+  <div class="kicker">Output · the 23 columns, by source</div>
+  <h2>Facts, research, and account context — in one row.</h2>
+  <div class="grid c3">
+    <div class="card"><h3>Factual <span class="tag">Apollo / Hunter</span></h3><ul>
+      <li>First / Last name</li><li>Email · LinkedIn URL</li><li>Job title · Seniority</li>
+      <li>Company size · Industry</li><li>Location · Domain</li>
+    </ul></div>
+    <div class="card"><h3>AI-researched <span class="tag">Claude + web</span></h3><ul>
+      <li>Account topline description</li><li>Latest press releases</li><li>How to target the company</li>
+      <li>Position bio · past 3 roles</li><li>CVP vs lead's profile</li><li><b>Personalised sales paragraph</b></li>
+    </ul></div>
+    <div class="card"><h3>Account context <span class="tag">discovery</span></h3><ul>
+      <li>Outlets in SG · fit score</li><li>Suggested products</li><li>Grant eligible · warm intro</li>
+      <li>Segment · fit reason</li><li>Source URL</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- 9 — HEAT RANK -->
+<section class="slide">
+  <div class="kicker">Output · prioritisation</div>
+  <h2>Every lead scored on one rubric.</h2>
+  <table>
+    <thead><tr><th>Heat</th><th>Meaning</th><th>Driver</th></tr></thead>
+    <tbody>
+      <tr class="best"><td class="v">1A</td><td>Immediate follow-up</td><td>Ideal ICP + senior decision-maker</td></tr>
+      <tr><td class="v">1B</td><td>Strong</td><td>Established chain + influential role</td></tr>
+      <tr><td class="v">2</td><td>Moderate</td><td>Smaller chain or mid-level contact</td></tr>
+      <tr><td class="v">3</td><td>Contextual — nurture</td><td>Borderline fit</td></tr>
+      <tr><td class="v">4</td><td>Low weight</td><td>Weak fit, deprioritise</td></tr>
+    </tbody>
+  </table>
+  <div class="sub">Rubric weights: ICP / product fit 40% · role &amp; influence 40% · reachability &amp; intent 20%.</div>
+</section>
+
+<!-- 10 — VERIFICATION -->
+<section class="slide">
+  <div class="kicker">Trust · verification layer</div>
+  <h2>"Research-backed" means checked — not just claimed.</h2>
+  <div class="grid c3">
+    <div class="card"><h3>Email <span class="tag">verified</span></h3><ul>
+      <li>Every address scored <b>deliverable / risky / undeliverable</b></li>
+      <li>Undeliverable is never auto-sent — protects sender reputation</li>
+    </ul></div>
+    <div class="card"><h3>Source <span class="tag">cross-checked</span></h3><ul>
+      <li>The discovery source URL must actually resolve</li>
+      <li>Claude re-checks the page supports the company &amp; outlet claims</li>
+    </ul></div>
+    <div class="card"><h3>Confidence <span class="tag">objective</span></h3><ul>
+      <li><b>High / Med / Low</b> from real signals — not the model's self-report</li>
+      <li>Low-confidence rows routed to a <b>Review</b> tab</li>
+    </ul></div>
+  </div>
+  <div class="sub">Closes the gap that kills outbound trust — a sheet of confident-but-wrong facts. Reps see what's solid and what to check first.</div>
+</section>
+
+<!-- 11 — PERSISTENCE / CONSOLE (interactive mockup) -->
+<section class="slide">
+  <div class="kicker">Operate · the live console</div>
+  <h2>Run it in the browser — no terminal. <span style="font-size:.5em;color:var(--faint)">(click the tabs ↓)</span></h2>
+  <div class="browser mock">
+    <div class="bar"><i class="dot-r"></i><i class="dot-y"></i><i class="dot-g"></i>
+      <span class="url">localhost:8501 · AI Lead Insights</span></div>
+    <div class="console">
+      <div class="side">
+        <h4>History</h4>
+        <div class="tog"><span class="sw"></span> Show previous leads</div>
+        <h4>➕ Find a company</h4>
+        <div class="fld">LiHO Tea</div>
+        <div class="fld">liho.com.sg</div>
+        <div class="fld">contacts: 2</div>
+        <div class="mbtn">🔍 Find leads</div>
+      </div>
+      <div class="main">
+        <div class="mtitle">🎯 AI Lead Insights</div>
+        <div class="mmetrics">
+          <div class="tile"><div class="v">12</div><div class="k">Total</div></div>
+          <div class="tile"><div class="v">2</div><div class="k">🔥 1A</div></div>
+          <div class="tile"><div class="v">6</div><div class="k">Companies</div></div>
+          <div class="tile"><div class="v">11</div><div class="k">With email</div></div>
+        </div>
+        <div class="tabs">
+          <span class="tab on" data-pane="p-table">Leads</span>
+          <span class="tab" data-pane="p-card">Lead card</span>
+          <span class="tab" data-pane="p-hist">History</span>
+        </div>
+        <div id="p-table" class="pane on">
+          <div class="mrow h"><span>Heat</span><span>Contact</span><span>Company</span><span>Conf.</span></div>
+          <div class="mrow"><span class="hb" style="background:#16a34a">1A</span><span>Yohannan · COO</span><span>KFC Singapore</span><span>High</span></div>
+          <div class="mrow"><span class="hb" style="background:#2563eb">1B</span><span>Ben · Ops Dir</span><span>Guzman y Gomez</span><span>Med</span></div>
+          <div class="mrow"><span class="hb" style="background:#d97706">2</span><span>Craig · GM</span><span>Coffee Bean SG</span><span>Med</span></div>
+          <div class="mrow"><span class="hb" style="background:#6b7280">3</span><span>Kean · Owner</span><span>Ya Kun Cafe</span><span>Low</span></div>
+        </div>
+        <div id="p-card" class="pane">
+          <div class="mcard2">
+            <div style="font-weight:700">Yohannan Johnson — COO · KFC Singapore
+              <span class="hb" style="background:#16a34a">1A</span></div>
+            <div style="color:var(--muted);font-size:.78rem;margin-top:.3rem">80 outlets · Fit 5/5 · Suggested: POS, SOK, DMB · 🌱 Greenfield · ✉️ deliverable</div>
+            <div class="para">"Hi Yohannan — with 80 KFC outlets on standardised menus, front-counter labour and queue times are exactly what Oangle's POS + self-ordering kiosks are built to cut. Worth a 20-min look?"</div>
+          </div>
+        </div>
+        <div id="p-hist" class="pane">
+          <div class="mrow h"><span>Date</span><span>Run</span><span>Source</span><span></span></div>
+          <div class="mrow"><span style="color:var(--faint);font-size:.74rem">Jun 17</span><span>10 leads</span><span>discovery</span><span>✓</span></div>
+          <div class="mrow"><span style="color:var(--faint);font-size:.74rem">Jun 17</span><span>2 leads</span><span>LiHO Tea</span><span>✓</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="sub">Type a company → verified leads in ~a minute · saved to history, deduped, and cached so reruns are near-free.</div>
+</section>
+
+<!-- 12 — AKIN x OANGLE WORKFLOW -->
+<section class="slide">
+  <div class="kicker">Working together · AKIN ↔ Oangle</div>
+  <h2>AKIN runs the engine. Oangle closes the deals.</h2>
+  <div class="pipe">
+    <div class="pstep"><div class="n">AKIN</div><h3>Generate</h3><p>Operates the agent — discovers, enriches, and <span class="accent">verifies</span> leads against Oangle's ICP.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep"><div class="n">HANDOFF</div><h3>Deliver</h3><p>A ranked, verified sheet + a Review tab of anything to double-check — in the shared console.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep"><div class="n">OANGLE</div><h3>Act</h3><p>Reviews the hot leads, runs outreach, and flags what converted.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep"><div class="n">LOOP</div><h3>Refine</h3><p>Oangle's feedback sharpens the ICP &amp; scoring for the next batch.</p></div>
+  </div>
+  <div class="sub">AKIN owns the system &amp; data quality · Oangle owns the relationships &amp; the close.</div>
+</section>
+
+<!-- 11 — STATUS -->
+<section class="slide">
+  <div class="kicker">Status</div>
+  <h2>Live today, honest edges.</h2>
+  <div style="margin-top:1.5rem;max-width:66ch">
+    <div class="status-row"><span class="dot live"></span><span><b>Live</b> — full pipeline: discover → contacts → enrich → <b>verify</b> → deliver, with a browser console.</span></div>
+    <div class="status-row"><span class="dot live"></span><span><b>Live</b> — verification layer (email, source, claim checks) + a Data-Confidence Review tab.</span></div>
+    <div class="status-row"><span class="dot live"></span><span><b>Live</b> — database persistence: lead history, outreach dedup, and research caching.</span></div>
+    <div class="status-row"><span class="dot pend"></span><span><b>Plan-dependent</b> — Apollo masks some PII on lower tiers; Hunter is the primary contact source.</span></div>
+  </div>
+</section>
+
+<!-- 12 — ROADMAP -->
+<section class="slide">
+  <div class="kicker">What's next</div>
+  <h2>From working tool to standing service.</h2>
+  <ul class="points">
+    <li><b>Hosted for Oangle</b> <span>— deploy the console so the team uses it by URL, no setup.</span></li>
+    <li><b>Compliance guardrails</b> <span>— PDPA / Spam-Control checks built into the outreach handover.</span></li>
+    <li><b>CRM-ready export</b> <span>— push verified leads straight into the outbound tool.</span></li>
+    <li><b>More clients</b> <span>— each new profile is one config entry; the pipeline is already client-agnostic.</span></li>
+  </ul>
+  <div class="footer-note">AKIN × Oangle SG</div>
+</section>
+
+<!-- 12b — ROADMAP · PRODUCT CLUSTERS -->
+<section class="slide">
+  <div class="kicker">Roadmap · beyond F&amp;B</div>
+  <h2>Same engine, every Oangle product line.</h2>
+  <p class="lead" style="margin-bottom:.4rem">The pipeline is cluster-agnostic. F&amp;B is live; each remaining Oangle line plugs in as <b>one config entry</b> — new ICP, titles &amp; scoring, no new code. <span style="color:var(--faint);font-size:.8em">(click a cluster ↓)</span></p>
+  <div class="pipe" id="clusterPipe">
+    <div class="pstep cluster on" data-detail="POS · SOK · ORB · DMB for multi-outlet F&amp;B chains — fast food, bubble tea, QSR, cloud kitchens, food courts. This is the Phase&nbsp;1 build: discovered, enriched and verified, live today.">
+      <div class="n" style="color:var(--good)">● LIVE</div><h3>Restaurant + Kitchen</h3><p>Multi-outlet F&amp;B — the built &amp; verified Phase&nbsp;1 vertical.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep cluster" data-detail="Service &amp; maintenance contracts — upkeep of the hardware &amp; software estates Oangle already installs. Target: ops &amp; facilities leads at existing tech buyers.">
+      <div class="n">NEXT</div><h3>Maintenance</h3><p>Service &amp; maintenance — recurring upkeep revenue.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep cluster" data-detail="Event organisers &amp; in-house event teams buying Oangle's booking system — large, recurring activations. Target: event directors &amp; producers.">
+      <div class="n">NEXT</div><h3>Event</h3><p>Organisers &amp; booking-system buyers.</p></div>
+    <div class="arrow">→</div>
+    <div class="pstep cluster" data-detail="Facility &amp; building management (MCST, outsourced FM) — today's manual physical cold-call route, systemised into a ranked, contactable lead list.">
+      <div class="n">NEXT</div><h3>Building / Facilities</h3><p>FM &amp; MCST — the manual cold-call route, systemised.</p></div>
+  </div>
+  <div class="sub" id="clusterDetail">POS · SOK · ORB · DMB for multi-outlet F&amp;B chains — fast food, bubble tea, QSR, cloud kitchens, food courts. This is the Phase 1 build: discovered, enriched and verified, live today.</div>
+</section>
+
+<!-- 13 — CLOSE -->
+<section class="slide">
+  <div class="kicker">The one thing to remember</div>
+  <h1>A segment goes in.<br>A <span class="accent">verified, ranked, personalised</span><br>outreach sheet comes out.</h1>
+  <p class="lead" style="margin-top:1.8rem">Hours of SDR research — checked, deduped, and ready to send.</p>
+  <div class="sub">AI Lead Insights · AKIN × Oangle</div>
+</section>
+
+<!-- ===================================================================== -->
+<!--  CONFIG — paste your Supabase project values here to enable editing.   -->
+<!--  Until both are filled, the deck behaves exactly as a normal deck      -->
+<!--  (no Edit button) and still opens offline by double-click.             -->
+<!--  Use the ANON / public key here (NOT the service_role key).            -->
+<!-- ===================================================================== -->
+<script>
+  const DECK = {
+    id: 'oangle-lead-finder-v2',// version namespace. Bumped to v2 on 18 Jun 2026 when the
+                                //   roadmap-clusters slide + run-scale stat were added: the
+                                //   slide structure changed, so the old positional-key
+                                //   versions no longer align. v2 starts a clean history;
+                                //   the HTML below is the source of truth until the next Save.
+                                //   One id per deck — copy this file and change the id to
+                                //   make a separate AKIN-branded deck.
+    supabaseUrl:     'https://isdmokybcximkwmrraov.supabase.co',
+    supabaseAnonKey: 'sb_publishable_EsHKajHIYUtYbckkjJVoTQ_ERITUMgK',  // publishable (browser-safe) key
+    editPassphrase:  'akin2026',// AKIN team enters this to edit. Change it before sharing.
+  };
+  // WORKFLOW (AKIN ↔ Oangle):
+  //   • AKIN (editors)  → open  <url>?edit  , enter the passphrase, change words, Save.
+  //   • Oangle (viewers)→ open  <url>        (no ?edit) → sees the latest AKIN content,
+  //                        no Edit button, cannot change anything.
+  // Both always load the newest saved version from Supabase; every Save is a revertable
+  // version in the deck_versions table.
+</script>
+
+<script>
+  // ---------------- Navigation ----------------
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0, editMode=false;
+  const bar=document.getElementById('bar');
+  const counter=document.getElementById('counter');
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,idx)=>s.classList.toggle('active',idx===i));
+    bar.style.width=((i)/(slides.length-1)*100)+'%';
+    counter.textContent=(i+1)+' / '+slides.length;
+  }
+  function next(){show(i+1)}
+  function prev(){show(i-1)}
+  document.addEventListener('keydown',e=>{
+    if(editMode) return;                       // typing in a slide — don't navigate
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();next()}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();prev()}
+    else if(e.key==='Home'){show(0)}
+    else if(e.key==='End'){show(slides.length-1)}
+    else if(e.key.toLowerCase()==='p'){togglePrint()}
+  });
+  document.addEventListener('click',e=>{
+    if(editMode) return;                       // clicks place the cursor, not advance
+    if(document.body.classList.contains('print-mode'))return;
+    if(e.target.closest('#editbar,#histPanel,.mock'))return;   // mockup is interactive, don't navigate
+    if(e.clientX < window.innerWidth*0.18){prev()}else{next()}
+  });
+  function togglePrint(){
+    document.body.classList.toggle('print-mode');
+    if(!document.body.classList.contains('print-mode'))show(i);
+  }
+  if(location.search.includes('print'))togglePrint();
+  show(0);
+
+  // Interactive UI-mockup tabs (Leads / Lead card / History) — don't advance the slide
+  document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',ev=>{
+    ev.stopPropagation();
+    const main=t.closest('.main'); const pane=t.getAttribute('data-pane');
+    main.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
+    main.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id===pane));
+  }));
+
+  // Interactive roadmap clusters — click a cluster to reveal its detail (don't navigate)
+  document.querySelectorAll('.cluster').forEach(c=>c.addEventListener('click',ev=>{
+    if(editMode) return;
+    ev.stopPropagation();
+    document.querySelectorAll('.cluster').forEach(x=>x.classList.toggle('on',x===c));
+    const d=document.getElementById('clusterDetail');
+    if(d){ d.style.opacity='0'; setTimeout(()=>{ d.innerHTML=c.getAttribute('data-detail'); d.style.opacity='1'; },120); }
+  }));
+
+  // ---------------- Editor (optional, Supabase-backed) ----------------
+  // Every text element below is editable; each gets a stable positional key
+  // (k0, k1, …) by document order. Editing words never changes the element
+  // count/order, so keys stay aligned across saves.
+  const EDIT_SELECTOR='h1,h2,.kicker,.lead,.sub,ul.points li,.card h3,.card li,'
+    +'.card p,.stat .num,.stat .lbl,td,.pill,.pstep h3,.pstep p,.footer-note';
+  let editableEls=[];
+  function collectEditable(){
+    // Exclude the UI mockup — its text is illustrative, not editable content.
+    editableEls=[...document.querySelectorAll(EDIT_SELECTOR)].filter(el=>!el.closest('.mock'));
+    editableEls.forEach((el,idx)=>el.setAttribute('data-ek','k'+idx));
+  }
+  function applyContent(map){
+    if(!map) return;
+    editableEls.forEach((el,idx)=>{ const v=map['k'+idx]; if(v!=null) el.innerHTML=v; });
+  }
+  function gatherContent(){
+    const m={}; editableEls.forEach((el,idx)=>{ m['k'+idx]=el.innerHTML; }); return m;
+  }
+  function slideIndexOf(el){ const s=el.closest('.slide'); return s?slides.indexOf(s)+1:''; }
+
+  const status=(t)=>{document.getElementById('editStatus').textContent=t||'';};
+  let sb=null;
+
+  function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+
+  async function fetchLatest(){
+    try{
+      const {data,error}=await sb.from('deck_versions').select('content')
+        .eq('deck',DECK.id).order('created_at',{ascending:false}).limit(1);
+      if(error||!data||!data.length) return null;
+      return data[0].content;
+    }catch(e){ return null; }
+  }
+
+  function authorName(){
+    let a=localStorage.getItem('deck_author');
+    if(!a){ a=prompt('Your name (saved with each version):','')||'anon'; localStorage.setItem('deck_author',a); }
+    return a;
+  }
+
+  async function saveVersion(){
+    status('Saving…');
+    const note=prompt('Optional note for this version (what changed?):','')||'';
+    const {error}=await sb.from('deck_versions').insert(
+      {deck:DECK.id, content:gatherContent(), author:authorName(), note});
+    status(error?('Save failed: '+error.message):'Saved ✓');
+  }
+
+  function enterEdit(){
+    const pass=prompt('Enter the edit passphrase:','');
+    if(pass!==DECK.editPassphrase){ if(pass!==null) alert('Wrong passphrase.'); return; }
+    editMode=true; document.body.classList.add('editing');
+    editableEls.forEach(el=>{el.contentEditable='true'; el.spellcheck=true;});
+    document.getElementById('editToggle').style.display='none';
+    ['saveBtn','historyBtn','exportBtn','doneBtn'].forEach(id=>document.getElementById(id).style.display='');
+    status('Editing — click any text to change it');
+  }
+  function exitEdit(){
+    editMode=false; document.body.classList.remove('editing');
+    editableEls.forEach(el=>el.contentEditable='false');
+    document.getElementById('editToggle').style.display='';
+    ['saveBtn','historyBtn','exportBtn','doneBtn'].forEach(id=>document.getElementById(id).style.display='none');
+    document.getElementById('histPanel').style.display='none';
+    status('');
+  }
+
+  async function showHistory(){
+    const panel=document.getElementById('histPanel');
+    if(panel.style.display==='block'){ panel.style.display='none'; return; }
+    panel.style.display='block';
+    const list=document.getElementById('histList');
+    list.innerHTML='<div class="meta" style="padding:.4rem">Loading…</div>';
+    const {data,error}=await sb.from('deck_versions').select('id,content,author,note,created_at')
+      .eq('deck',DECK.id).order('created_at',{ascending:false}).limit(30);
+    if(error){ list.innerHTML='<div class="meta" style="padding:.4rem">Error: '+error.message+'</div>'; return; }
+    if(!data.length){ list.innerHTML='<div class="meta" style="padding:.4rem">No versions saved yet.</div>'; return; }
+    list.innerHTML='';
+    data.forEach((v,idx)=>{
+      const when=new Date(v.created_at).toLocaleString();
+      const div=document.createElement('div'); div.className='hist-item';
+      div.innerHTML='<div class="meta"><b>'+(idx===0?'Latest':when)+'</b>'
+        +(idx===0?(' · '+when):'')+'<br>'+(v.author||'anon')+(v.note?(' — '+v.note):'')+'</div>'
+        +'<div class="acts"><button data-act="preview">Preview</button>'
+        +'<button data-act="revert">Revert to this</button></div>';
+      div.querySelector('[data-act="preview"]').onclick=()=>{applyContent(v.content);status('Previewing — Revert to keep, or reload to discard');};
+      div.querySelector('[data-act="revert"]').onclick=async()=>{
+        if(!confirm('Revert: this saves a NEW version with this older content. Continue?'))return;
+        applyContent(v.content);
+        const {error}=await sb.from('deck_versions').insert(
+          {deck:DECK.id,content:v.content,author:authorName(),note:'reverted to '+when});
+        status(error?('Revert failed: '+error.message):'Reverted ✓'); if(!error) showHistory();
+      };
+      list.appendChild(div);
+    });
+  }
+
+  async function exportExcel(){
+    status('Building Excel…');
+    try{ if(!window.XLSX) await loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'); }
+    catch(e){ status('Export needs internet'); return; }
+    const rows=[['Slide','Field','Content']];
+    editableEls.forEach((el,idx)=>rows.push([slideIndexOf(el),'k'+idx,el.innerText.trim()]));
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:7},{wch:8},{wch:90}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Deck Content');
+    XLSX.writeFile(wb, DECK.id+'-content.xlsx');
+    status('Excel downloaded ✓');
+  }
+
+  async function initEditor(){
+    collectEditable();
+    if(!(DECK.supabaseUrl && DECK.supabaseAnonKey)) return;   // not configured → plain deck
+    try{
+      if(!window.supabase) await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
+      sb=window.supabase.createClient(DECK.supabaseUrl, DECK.supabaseAnonKey);
+      applyContent(await fetchLatest());           // everyone sees the latest AKIN content
+      // Edit toolbar is AKIN-only: it appears only on a `?edit` link, so Oangle's
+      // plain link stays clean and view-only.
+      if(location.search.includes('edit')){
+        document.getElementById('editbar').style.display='flex';
+        document.getElementById('editToggle').onclick=enterEdit;
+        document.getElementById('doneBtn').onclick=exitEdit;
+        document.getElementById('saveBtn').onclick=saveVersion;
+        document.getElementById('historyBtn').onclick=showHistory;
+        document.getElementById('exportBtn').onclick=exportExcel;
+      }
+    }catch(e){ console.warn('Deck editing unavailable (offline?):',e); }
+  }
+  initEditor();
+</script>
+</body>
+</html>
