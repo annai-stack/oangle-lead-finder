@@ -24,6 +24,11 @@ from datetime import datetime
 # ---------------------------------------------------------------------------
 
 MODEL = "claude-opus-4-8"
+# Faster model for the interactive single-company scoring (the live "Find leads"
+# path in the viewer). The web-search loop is the latency bottleneck, so a
+# quicker model here roughly halves time-to-result with no real quality loss on
+# a one-company fit assessment. Batch discovery still uses MODEL (Opus) above.
+SCORE_MODEL = "claude-sonnet-4-6"
 
 MAX_LEADS_PER_SEGMENT = 5       # Raise to get more leads (raises API cost)
 MIN_FIT_SCORE = 2               # Drop leads below this score before export (0 = keep all)
@@ -172,6 +177,91 @@ def _parse_leads(text: str, segment: str) -> list[dict]:
         print(f"  [WARN] JSON parse error for '{segment}': {exc}", file=sys.stderr)
         print(f"  [RAW]  {text[:400]}", file=sys.stderr)
     return []
+
+
+def score_company(client: anthropic.Anthropic, name: str, website: str,
+                  segment: str = "") -> dict:
+    """Score ONE named company against the Oangle rubric (web search).
+
+    Used by the interactive viewer so a user-entered company gets the same
+    account-context fields (outlets, fit score, suggested products, grant flag)
+    that the segment-discovery path produces. Returns {} on failure.
+    """
+    user = (
+        f'Assess this specific Singapore F&B company for Oangle: "{name}" ({website}).\n'
+        "Search the web for its OFFICIAL Singapore website, outlet count, menu "
+        "format, and technology fit. For official_website, return the real, "
+        "currently-working homepage URL you find via search — not a guess and not "
+        "the URL given above unless you confirm it is correct.\n"
+        "Return ONLY this JSON object (no other text):\n"
+        '{"official_website": "https://...", "num_outlets_sg": 0, '
+        '"fit_score": 1, "fit_reason": "one sentence", '
+        '"confidence": "high|med|low", "grant_eligible": "Y|N", '
+        '"suggested_products": ["POS","SOK"], "segment": "' + segment + '"}'
+    )
+    messages = [{"role": "user", "content": user}]
+    response = None
+    for _ in range(2):   # cap search/continuation rounds — speed over exhaustive search
+        response = client.messages.create(
+            model=SCORE_MODEL, max_tokens=2048, system=SYSTEM_PROMPT,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 2}],
+            messages=messages)
+        if response.stop_reason == "end_turn":
+            break
+        if response.stop_reason == "pause_turn":
+            messages = [{"role": "user", "content": user},
+                        {"role": "assistant", "content": response.content}]
+            continue
+        break
+    text = "".join(b.text for b in response.content if b.type == "text") if response else ""
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if m:
+        try:
+            obj = json.loads(m.group())
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
+def _domain_of(url: str) -> str:
+    """Bare host (no scheme, no www, no path) for comparing two URLs."""
+    u = (url or "").strip()
+    if "://" in u:
+        u = u.split("://", 1)[1]
+    host = u.split("/")[0].split(":")[0]
+    return host.removeprefix("www.").lower()
+
+
+def resolve_url(provided: str, found: str = "") -> tuple[str, str]:
+    """Return (best_url, note) — the most accurate website for a company.
+
+    Contact lookup (Hunter/Apollo) is domain-keyed, so a wrong or missing URL
+    silently yields zero contacts. The authoritative signal is the official site
+    the model finds via live web search (`found`); it confirms or corrects what
+    the user typed (`provided`) — e.g. typed "hans.com.sg" → real "hans.sg".
+
+    We deliberately do NOT gate on an HTTP request: many real sites block bot
+    user-agents (403) or aren't on HTTPS, so a fetch is a poor correctness test
+    and would reject valid domains. Web search is the better check.
+    """
+    def _norm(u: str) -> str:
+        u = (u or "").strip()
+        if u and "://" not in u:
+            u = "https://" + u
+        return u
+
+    p, f = _norm(provided), _norm(found)
+    p_dom, f_dom = _domain_of(p), _domain_of(f)
+
+    if f_dom:                                  # model found an official site
+        if p_dom and f_dom != p_dom:
+            return f, f"corrected → {f_dom} (you entered {p_dom})"
+        if not p_dom:
+            return f, f"found official site → {f_dom}"
+        return f, "URL confirmed by web search"
+    return p, ("using entered URL (web search found none)" if p_dom else "no URL provided")
 
 
 # ---------------------------------------------------------------------------

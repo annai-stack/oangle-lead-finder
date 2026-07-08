@@ -3,3 +3,14 @@ __pycache__/
 *.py[cod]
 .env
 .streamlit/secrets.toml
+
+# OS / editor cruft
+.DS_Store
+
+# Generated data & run outputs (not source)
+*.log
+*.xlsx
+*_result.json
+_insights_records*.json
+_skeleton.json
+engine_runs/

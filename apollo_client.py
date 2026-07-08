@@ -39,7 +39,10 @@ def extract_domain(website: str) -> str | None:
         url = f"https://{url}"
     try:
         parsed = urlparse(url)
-        domain = parsed.netloc.lstrip("www.").split(":")[0]
+        # removeprefix, NOT lstrip: lstrip("www.") strips any leading chars in
+        # the set {w, .}, corrupting domains like "wendys.com" -> "endys.com".
+        netloc = parsed.netloc.split(":")[0]
+        domain = netloc.removeprefix("www.")
         return domain or None
     except Exception:
         return None
@@ -87,14 +90,49 @@ def _parse_apollo(data: dict) -> list[dict]:
     for person in people:
         phones = person.get("phone_numbers") or []
         phone  = next((p["sanitized_number"] for p in phones if p.get("sanitized_number")), "")
+        org    = person.get("organization") or person.get("account") or {}
+
+        # Location — prefer person-level, fall back to org-level
+        loc_parts = [
+            person.get("city") or org.get("city") or "",
+            person.get("state") or org.get("state") or "",
+            person.get("country") or org.get("country") or "",
+        ]
+        location = ", ".join(p for p in loc_parts if p)
+
+        # Past employment (for the "Past 3 Work Experience" column). Apollo
+        # returns employment_history as a list ordered most-recent-first.
+        history = []
+        for job in (person.get("employment_history") or [])[:3]:
+            history.append({
+                "title":        job.get("title") or "",
+                "organization": job.get("organization_name") or "",
+                "start_date":   job.get("start_date") or "",
+                "end_date":     job.get("end_date") or "",
+            })
+
         # Apollo may mask emails on lower-tier plans — still include the row
         contacts.append({
+            # Core contact fields (consumed by existing enrich_leads flow)
             "contact_name":  person.get("name") or "",
             "contact_title": person.get("title") or "",
             "contact_email": person.get("email") or "",
             "contact_phone": phone,
             "linkedin_url":  person.get("linkedin_url") or "",
             "source":        "Apollo",
+            # Firmographic / person fields (consumed by the insights pipeline).
+            # Kept as extra keys — old callers ignore them.
+            "first_name":      person.get("first_name") or "",
+            "last_name":       person.get("last_name") or "",
+            "seniority":       person.get("seniority") or "",
+            "headline":        person.get("headline") or "",
+            "location":        location,
+            "company_name":    org.get("name") or "",
+            "company_domain":  org.get("primary_domain") or org.get("website_url") or "",
+            "company_size":    org.get("estimated_num_employees") or "",
+            "industry":        org.get("industry") or "",
+            "company_desc":    org.get("short_description") or "",
+            "employment_history": history,
         })
     return contacts
 
@@ -165,8 +203,50 @@ def search_contacts_hunter(
             "contact_phone": email_data.get("phone_number") or "",
             "linkedin_url":  email_data.get("linkedin") or "",
             "source":        "Hunter",
+            # Extra fields for the insights pipeline
+            "first_name":    first,
+            "last_name":     last,
+            "seniority":     email_data.get("seniority") or "",
         })
     return contacts
+
+
+# ---------------------------------------------------------------------------
+# Apollo organization enrichment — real firmographics (industry, size, domain)
+# ---------------------------------------------------------------------------
+
+APOLLO_ORG_ENRICH = "https://api.apollo.io/api/v1/organizations/enrich"
+
+
+def enrich_organization_apollo(api_key: str, domain: str) -> dict:
+    """Fetch real firmographics for a company domain via Apollo org-enrich.
+
+    The people-search endpoint masks PII on lower tiers, but org-enrich still
+    returns industry, employee count and the canonical domain. Returns {} on
+    any error so the caller can fall back gracefully.
+    """
+    try:
+        resp = requests.get(
+            APOLLO_ORG_ENRICH,
+            params={"domain": domain},
+            headers={"Cache-Control": "no-cache", "X-Api-Key": api_key},
+            timeout=20,
+        )
+        if not resp.ok:
+            return {}
+        org = resp.json().get("organization") or {}
+        return {
+            "company_name":   org.get("name") or "",
+            "company_domain": org.get("primary_domain") or domain,
+            "industry":       org.get("industry") or "",
+            "company_size":   org.get("estimated_num_employees") or "",
+            "location": ", ".join(p for p in (
+                org.get("city") or "", org.get("state") or "", org.get("country") or "",
+            ) if p),
+            "company_desc":   org.get("short_description") or "",
+        }
+    except Exception:
+        return {}
 
 
 # ---------------------------------------------------------------------------
