@@ -1154,7 +1154,7 @@ def _deck_contact_card(r: dict, profile: dict) -> str:
     name  = f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or "—"
     title = r.get("job_title", "")
     comp  = r.get("company_name", "")
-    sub   = " · ".join(x for x in [title, comp] if x)
+    sub   = " · ".join(str(x) for x in [title, comp] if x)
     head  = (f'<div class="akin-rechead"><b>{html.escape(name)}'
              f'<span class="sub"> · {html.escape(sub)}</span></b>'
              f'<span class="akin-band {band}">{html.escape(str(r.get("heat_rank", "")))}</span></div>')
@@ -1168,8 +1168,8 @@ def _deck_contact_card(r: dict, profile: dict) -> str:
         rows.append(f'<div class="akin-row{" t2" if t2 else ""}">'
                     f'<div class="akin-label">{label}</div><div class="akin-val">{cell}</div></div>')
 
-    sect_size = " · ".join(x for x in [r.get("sector") or r.get("industry", ""),
-                                       r.get("company_size", "")] if x)
+    sect_size = " · ".join(str(x) for x in [r.get("sector") or r.get("industry", ""),
+                                            r.get("company_size", "")] if x)
     row("Sector · Size",   sect_size)
     row("Location",        r.get("location", ""))
     row("Org description", r.get("company_topline", ""))
@@ -1211,10 +1211,10 @@ def _deck_contacts_table(records: list[dict], profile: dict) -> str:
     for r in records:
         band = _deck_band_class(str(r.get("heat_rank", "")), profile["heat_ranks"])
         name = f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or "—"
-        comp = r.get("company_name", "")
-        sect = " · ".join(x for x in [r.get("sector") or r.get("industry", ""),
-                                      r.get("company_size", "")] if x)
-        champ = ", ".join(x for x in [r.get("job_title", ""), r.get("email", "")] if x)
+        comp = str(r.get("company_name", ""))
+        sect = " · ".join(str(x) for x in [r.get("sector") or r.get("industry", ""),
+                                           r.get("company_size", "")] if x)
+        champ = ", ".join(str(x) for x in [r.get("job_title", ""), r.get("email", "")] if x)
         engage = r.get("how_to_target", "") or r.get("cvp", "")
         champ_cell = html.escape(champ)
         if engage:
@@ -1237,11 +1237,11 @@ def _deck_drill(r: dict, profile: dict) -> str:
     band = _deck_band_class(str(r.get("heat_rank", "")), profile["heat_ranks"])
     name = f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or "—"
     li   = r.get("linkedin_url", "")
-    meta = [f'<span>{html.escape(r.get("job_title", "") or "—")}</span> · {html.escape(r.get("company_name", ""))}']
+    meta = [f'<span>{html.escape(str(r.get("job_title", "") or "—"))}</span> · {html.escape(str(r.get("company_name", "")))}']
     meta.append(f'LinkedIn <span>{"✔ confirmed" if li else "—"}</span>')
-    meta.append(f'Email <span>{html.escape(r.get("email", "") or "—")}</span>')
-    meta.append(f'Seniority <span>{html.escape(r.get("seniority", "") or "—")}</span>')
-    meta.append(f'Location <span>{html.escape(r.get("location", "") or "—")}</span>')
+    meta.append(f'Email <span>{html.escape(str(r.get("email", "") or "—"))}</span>')
+    meta.append(f'Seniority <span>{html.escape(str(r.get("seniority", "") or "—"))}</span>')
+    meta.append(f'Location <span>{html.escape(str(r.get("location", "") or "—"))}</span>')
     who = (f'<div class="akin-who"><span class="akin-band {band}">{html.escape(str(r.get("heat_rank", "")))}</span>'
            f'<div style="margin-top:10px"><b>{html.escape(name)}</b></div>'
            f'<div class="meta">{"<br>".join(meta)}</div></div>')
