@@ -14,6 +14,7 @@ are available, then refresh this page.
 
 import io
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -223,7 +224,11 @@ session_recs = st.session_state.session_records
 if show_prev:
     prev, err = load_previous_leads(KEYS)
     if err:
-        st.sidebar.warning(f"Supabase history unavailable: {err}")
+        # Supabase is optional and the local records still load, so this is not
+        # a user-facing failure — a raw DNS/errno box on screen only looks
+        # broken (badly so in a demo). Note it quietly; log the detail.
+        print(f"[insights_app] Supabase history unavailable: {err}", file=sys.stderr)
+        st.sidebar.caption("Cloud history unavailable — showing local records.")
         prev = []
     local = json.loads(RECORDS.read_text()) if RECORDS.exists() else []
     # Full view = this session ∪ Supabase history ∪ curated sample, deduped.

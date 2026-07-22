@@ -97,9 +97,10 @@ with st.sidebar:
         if hasattr(st, "secrets")
         else os.environ.get("ANTHROPIC_API_KEY", "")
     )
+    # A configured key stays silent — the status badges were sidebar clutter in
+    # demos. The input only appears when a key is genuinely missing.
     if _anth_secret:
         anthropic_key = _anth_secret
-        st.success("Anthropic key configured", icon="🔒")
     else:
         anthropic_key = st.text_input("🔑 Anthropic API Key", type="password", placeholder="sk-ant-...")
 
@@ -111,7 +112,6 @@ with st.sidebar:
     )
     if _apollo_secret:
         apollo_key = _apollo_secret
-        st.success("Apollo key configured", icon="🔒")
     else:
         apollo_key = st.text_input("🔗 Apollo API Key", type="password", placeholder="apollo-key...")
 
@@ -123,7 +123,6 @@ with st.sidebar:
     )
     if _hunter_secret:
         hunter_key = _hunter_secret
-        st.success("Hunter.io key configured", icon="🔒")
     else:
         hunter_key = st.text_input("🔍 Hunter.io API Key", type="password", placeholder="hunter-key...")
 
@@ -271,8 +270,15 @@ def _render_account_leads(df: pd.DataFrame, key: str, dl_label: str = "⬇️  D
     m1.metric("Total leads", len(df))
     m2.metric("Score 5 (Ideal)", (df["Score"] == 5).sum())
     m3.metric("Score 4 (Strong)", (df["Score"] == 4).sum())
-    m4.metric("Warm intros", (df["Warm"] == "Y").sum())
-    m5.metric("Grant eligible", (df["Grant"] == "Y").sum())
+    # A run that never collected these (an older CSV, or a client with no warm /
+    # grant angle) must read "—", not "0" — zero claims we looked and found none.
+    def _flag_metric(col: str) -> str | int:
+        if col not in df.columns:
+            return "—"
+        vals = df[col].astype(str).str.strip()
+        return "—" if (vals == "").all() else int((vals.str.upper() == "Y").sum())
+    m4.metric("Warm intros", _flag_metric("Warm"))
+    m5.metric("Grant eligible", _flag_metric("Grant"))
     st.markdown("---")
 
     fc1, fc2, fc3 = st.columns(3)
@@ -415,7 +421,7 @@ def _render_contact_results(contacts_df: pd.DataFrame) -> None:
 
 def render_landing() -> None:
     st.title("🎯 Akin Lead Finder")
-    st.caption("AI-powered B2B prospect discovery — powered by Claude + Apollo")
+    st.caption("AI-powered B2B prospect discovery")
     st.markdown("---")
 
     col1, col2 = st.columns(2, gap="large")
