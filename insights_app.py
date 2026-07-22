@@ -137,10 +137,10 @@ def enrich_single_company(profile: dict, company: dict, keys: dict, n_contacts: 
     if not contacts:
         used = f" (searched domain: {domain})" if domain else ""
         msg = ("No reachable contacts found" + used + ". " +
-               ("Add the company's website so Hunter can find real emails — "
+               ("Add the company's website so we can find real emails — "
                 "without a domain, results are usually masked." if not domain
-                else "This company likely has no named decision-makers in "
-                     "Hunter/Apollo — only generic role inboxes, which are skipped."))
+                else "This company likely has no named decision-makers on record "
+                     "— only generic role inboxes, which are skipped."))
         return [], msg
 
     # Enrich + verify (cache-aware → reruns of the same company are near-free)
@@ -240,7 +240,7 @@ df = pd.DataFrame(records)
 
 st.title("🎯 AI Lead Insights")
 st.caption(f"Client: **{profile['client_name']}** · {len(df)} enriched leads · "
-           "contacts from Hunter + Apollo, enrichment researched per contact")
+           "contact data verified, enrichment researched per contact")
 
 def find_in_history(name: str, site: str) -> list:
     """Records already on hand that match the typed company — so a known company
@@ -269,7 +269,7 @@ def find_in_history(name: str, site: str) -> list:
 with st.sidebar:
     st.header("➕ Find leads for a company")
     st.caption("Already in history → loads instantly. New company → runs the agent "
-               "live (Anthropic + Apollo/Hunter), ~1–2 min.")
+               "live, ~1–2 min.")
     in_name = st.text_input("Company name", placeholder="e.g. KFC")
     in_site = st.text_input("Website", placeholder="e.g. kfc.com.sg")
     in_seg  = st.text_input("Segment (optional)", placeholder="bubble tea")
