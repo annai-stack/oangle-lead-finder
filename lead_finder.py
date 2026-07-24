@@ -19,6 +19,8 @@ import re
 import sys
 from datetime import datetime
 
+import client_config
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -52,8 +54,11 @@ OANGLE_PRODUCTS = [
 
 # Brands reachable via the kitchen-equipment-supplier partnership channel.
 # Leads matching these names get warm_intro=Y and should be worked ahead of
-# cold leads of the same score.
-WARM_INTRO_BRANDS = {"subway", "guzman y gomez", "guzman", "kfc"}
+# cold leads of the same score. Sourced from the Oangle client profile so the
+# legacy path and the generic engine can never disagree about who is warm;
+# the UI may still override this set at runtime for a one-off run.
+WARM_INTRO_BRANDS = {b.lower() for b in
+                     client_config.CLIENTS["oangle"].get("warm_intro_brands", [])}
 
 # ---------------------------------------------------------------------------
 # Prompts

@@ -48,6 +48,21 @@ OANGLE = {
         "can qualify the contract for Singapore government technology grants."
     ),
 
+    # Brands reachable through the kitchen-equipment partner — a warm intro is
+    # worth more than any cold-outreach signal, so these are flagged
+    # deterministically (never left to the model) and sorted to the top.
+    # Matched as lowercase substrings against the brand/company name.
+    "warm_intro_brands": ["subway", "guzman y gomez", "guzman", "kfc"],
+
+    # When set, discovery is asked to judge grant eligibility and return Y/N.
+    # Clients without a grant angle simply omit this key and get no column.
+    "grant_logic": (
+        "Flag grant_eligible=Y if an AI customisation of the workflow would be a "
+        "natural add-on (e.g. predictive ordering, personalised digital-menu-board "
+        "content). This can qualify the contract for Singapore government "
+        "technology grants and increases deal value. Otherwise N."
+    ),
+
     # Goes verbatim into the 'Sample Scoring Logic' column and is shown to the
     # model so the heat rank it assigns is consistent with the rubric.
     "scoring_logic": (

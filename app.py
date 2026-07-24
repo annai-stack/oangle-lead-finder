@@ -97,9 +97,10 @@ with st.sidebar:
         if hasattr(st, "secrets")
         else os.environ.get("ANTHROPIC_API_KEY", "")
     )
+    # A configured key stays silent — the status badges were sidebar clutter in
+    # demos. The input only appears when a key is genuinely missing.
     if _anth_secret:
         anthropic_key = _anth_secret
-        st.success("Anthropic key configured", icon="🔒")
     else:
         anthropic_key = st.text_input("🔑 Anthropic API Key", type="password", placeholder="sk-ant-...")
 
@@ -111,7 +112,6 @@ with st.sidebar:
     )
     if _apollo_secret:
         apollo_key = _apollo_secret
-        st.success("Apollo key configured", icon="🔒")
     else:
         apollo_key = st.text_input("🔗 Apollo API Key", type="password", placeholder="apollo-key...")
 
@@ -123,7 +123,6 @@ with st.sidebar:
     )
     if _hunter_secret:
         hunter_key = _hunter_secret
-        st.success("Hunter.io key configured", icon="🔒")
     else:
         hunter_key = st.text_input("🔍 Hunter.io API Key", type="password", placeholder="hunter-key...")
 
@@ -166,18 +165,26 @@ with st.sidebar:
     if _page == "new_run_contact":
         st.markdown("---")
         st.subheader("⚙️ Contact Config")
+        # Vendor names stay out of the UI, but the option VALUES are what the
+        # run logic compares against — so only the labels are re-worded.
         contact_source = st.radio(
             "Data source",
             ["Apollo.io", "Hunter.io", "Both"],
+            format_func=lambda v: {
+                "Apollo.io": "Directory (names, emails, phones)",
+                "Hunter.io": "Email finder",
+                "Both": "Both sources",
+            }[v],
             horizontal=True,
-            help="Apollo: names + emails + phones. Hunter: emails focused. Both: merged results.",
+            help="Directory: names, emails and phones. Email finder: email-focused. "
+                 "Both: merged results.",
         )
         max_contacts   = st.slider("Max contacts per company", 1, 10, 3)
         contact_titles = st.multiselect(
-            "Title filter (Apollo)",
+            "Title filter",
             options=apollo_client.DEFAULT_TITLES,
             default=apollo_client.DEFAULT_TITLES,
-            help="Only applies to Apollo searches.",
+            help="Applies to directory searches.",
         )
     else:
         contact_source = "Both"
@@ -271,8 +278,15 @@ def _render_account_leads(df: pd.DataFrame, key: str, dl_label: str = "⬇️  D
     m1.metric("Total leads", len(df))
     m2.metric("Score 5 (Ideal)", (df["Score"] == 5).sum())
     m3.metric("Score 4 (Strong)", (df["Score"] == 4).sum())
-    m4.metric("Warm intros", (df["Warm"] == "Y").sum())
-    m5.metric("Grant eligible", (df["Grant"] == "Y").sum())
+    # A run that never collected these (an older CSV, or a client with no warm /
+    # grant angle) must read "—", not "0" — zero claims we looked and found none.
+    def _flag_metric(col: str) -> str | int:
+        if col not in df.columns:
+            return "—"
+        vals = df[col].astype(str).str.strip()
+        return "—" if (vals == "").all() else int((vals.str.upper() == "Y").sum())
+    m4.metric("Warm intros", _flag_metric("Warm"))
+    m5.metric("Grant eligible", _flag_metric("Grant"))
     st.markdown("---")
 
     fc1, fc2, fc3 = st.columns(3)
@@ -415,7 +429,7 @@ def _render_contact_results(contacts_df: pd.DataFrame) -> None:
 
 def render_landing() -> None:
     st.title("🎯 Akin Lead Finder")
-    st.caption("AI-powered B2B prospect discovery — powered by Claude + Apollo")
+    st.caption("AI-powered B2B prospect discovery")
     st.markdown("---")
 
     col1, col2 = st.columns(2, gap="large")
@@ -489,7 +503,7 @@ Search the web for F&B chains in Singapore, scored and ranked against Oangle's I
     with col2:
         st.markdown("#### 👤 Contact Leads")
         st.markdown("""
-Enrich an existing account leads list with decision-maker contact data from Apollo.io.
+Enrich an existing account leads list with decision-maker contact data.
 
 **Adds to each company:**
 - Contact name & job title
@@ -574,11 +588,11 @@ def render_new_run_contact() -> None:
     _back(to="new_run_type")
     _breadcrumb("Home", "New Run", "Contact Leads")
     st.title("Contact Lead Finder")
-    st.caption("Enrich companies with Apollo.io contact data.")
+    st.caption("Enrich companies with decision-maker contact data.")
     st.markdown("---")
 
     if not apollo_key and not hunter_key:
-        st.warning("At least one API key required — add Apollo and/or Hunter.io key in the sidebar.", icon="🔑")
+        st.warning("A contact-data key is required — add one in the sidebar.", icon="🔑")
         return
 
     # ── Step 1: Source ────────────────────────────────────────────────────────
@@ -642,7 +656,7 @@ def render_new_run_contact() -> None:
     # ── Source B: manual names ─────────────────────────────────────────────
     else:
         st.markdown("### Step 2 — Enter company/brand names")
-        st.caption("Apollo will search by company name keyword. One name per line.")
+        st.caption("Companies are matched by name keyword. One name per line.")
         manual_text = st.text_area(
             "Company names",
             placeholder="McDonald's Singapore\nKFC Singapore\nToastBox",
@@ -675,7 +689,7 @@ def render_new_run_contact() -> None:
             f"🔍  Fetch contacts for {len(selected_brands)} {'company' if len(selected_brands) == 1 else 'companies'}",
             type="primary",
         ):
-            progress_bar = st.progress(0, text="Starting Apollo enrichment…")
+            progress_bar = st.progress(0, text="Starting contact enrichment…")
 
             def _progress(i: int, total: int, brand: str) -> None:
                 progress_bar.progress(i / total, text=f"Fetching: **{brand}** ({i+1}/{total})")
@@ -785,7 +799,7 @@ def render_generic_profile() -> None:
             options=apollo_client.DEFAULT_TITLES,
             default=apollo_client.DEFAULT_TITLES[:6],
             accept_new_options=True,
-            help="Seniority/roles pulled from Apollo for each company. "
+            help="Seniority/roles pulled for each company. "
                  "Type any title and press Enter to add one that isn't listed.")
 
         with st.expander("Advanced — scoring rubric & heat-rank labels"):
@@ -1377,7 +1391,7 @@ def render_engine_run_contact() -> None:
     st.markdown("---")
 
     if not (apollo_key or hunter_key):
-        st.warning("Contact discovery needs an Apollo and/or Hunter.io key — add one in the sidebar.", icon="🔑")
+        st.warning("Contact discovery needs a contact-data key — add one in the sidebar.", icon="🔑")
         return
 
     params = _engine_inputs(profile, key="cont")
