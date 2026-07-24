@@ -126,7 +126,7 @@ per-lead average.
 ## Typical commands
 
 ```bash
-cd /Users/annaida/akin-ai/lead-finder
+cd path/to/lead-finder
 
 # Verify Apollo (one call, no enrichment)
 .venv/bin/python run_insights.py --apollo-probe kfc.com.sg
@@ -138,12 +138,38 @@ cd /Users/annaida/akin-ai/lead-finder
 # Full run, cost-optimised (Sonnet draft + Opus polish on 1A/1B, batch)
 .venv/bin/python run_insights.py --from-latest-csv --max-companies 10 \
     --contacts-per-company 3 --batch
-
-# View results locally
-.venv/bin/streamlit run insights_app.py
 ```
+
+### Running the UI — there are TWO apps, and a demo needs both
+
+```bash
+# Main UI: landing → Select a Client / Generic Engine / Previous Runs
+.venv/bin/streamlit run app.py                              # localhost:8501
+
+# Insights viewer: enriched contact cards + xlsx download
+.venv/bin/streamlit run insights_app.py --server.port 8502  # localhost:8502
+```
+
+`app.py` is the current entry point. `insights_app.py` is the older single
+screen, still used for the enriched contact cards — **start both before a
+demo call**. Neither is deployed anywhere; this is laptop-only, so nobody at
+the client can reach it. See `DEMO_GUIDE.md` for the runbook.
 
 ## Approximate cost (Anthropic only; Apollo/Hunter/BuiltWith billed separately)
 - Opus, naive: ~$0.22/lead
-- Sonnet draft + Opus polish (default): ~$0.12/lead
-- + `--batch`: ~$0.07/lead  (500 leads ≈ $37)
+- Sonnet draft + Opus polish (default): ~$0.12/lead *modelled*
+- + `--batch`: ~$0.07/lead *modelled* (500 leads ≈ $37)
+
+> **Measured, not modelled (22 Jul 2026):** a real end-to-end run cost
+> **~$0.197/lead** — company enrichment burns ~6 web searches and ~8.4k output
+> tokens, more than the model above assumes. Quote the measured figure to
+> clients. The `--batch` discount has only ever been tested against mocks,
+> never live.
+
+## ⚠️ Timing — do not run live in front of a prospect
+
+A real run took **8 min 58 s for 2 leads** (~4.5 min/lead). 10 leads ≈ 45
+minutes; the deck's "100+ leads per run" is ≈ 7.5 hours. This is an overnight
+batch job. The honest pitch is *"queue it, list waiting next morning"* — never
+"live in 10 minutes". Demo from the pre-baked June set instead (toggle **Show
+previously generated leads** in the 8502 sidebar).
